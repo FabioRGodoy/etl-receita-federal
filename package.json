@@ -1,0 +1,29 @@
+{
+  "name": "etl-receita-federal",
+  "version": "1.0.0",
+  "description": "ETL para processar dumps públicos de CNPJ da Receita Federal do Brasil",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "discovery": "node src/cli/discovery-test.js",
+    "full-load": "node src/cli/full-load.js",
+    "delta": "node src/cli/delta.js",
+    "test": "node src/cli/discovery-test.js"
+  },
+  "keywords": [
+    "etl",
+    "cnpj",
+    "receita-federal",
+    "dados-abertos"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.5",
+    "cheerio": "^1.0.0-rc.12",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.4.1",
+    "pg": "^8.11.3",
+    "yauzl": "^3.1.2"
+  }
+}

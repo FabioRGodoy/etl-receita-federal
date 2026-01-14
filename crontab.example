@@ -1,0 +1,33 @@
+# Exemplo de configuração de crontab para ETL Receita Federal
+#
+# Para instalar:
+# crontab -e
+# 
+# Copiar as linhas abaixo e ajustar os caminhos conforme necessário
+
+# Variáveis de ambiente
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PROJECT_DIR=/opt/etl-receita-federal
+
+# ETL DELTA - Executar diariamente às 2h da manhã
+0 2 * * * cd $PROJECT_DIR && ./scripts/run-delta.sh >> logs/cron-delta.log 2>&1
+
+# Backup do banco - Executar diariamente às 4h da manhã
+0 4 * * * cd $PROJECT_DIR && ./scripts/backup-db.sh >> logs/cron-backup.log 2>&1
+
+# Health check - Executar a cada 6 horas
+0 */6 * * * cd $PROJECT_DIR && ./scripts/health-check.sh >> logs/cron-health.log 2>&1
+
+# Limpeza de logs antigos - Executar semanalmente aos domingos às 3h
+0 3 * * 0 find $PROJECT_DIR/logs -name "etl-*.log" -mtime +30 -delete
+0 3 * * 0 find $PROJECT_DIR/logs -name "cron-*.log" -mtime +30 -delete
+
+# Limpeza de arquivos temporários - Executar diariamente às 5h
+0 5 * * * find $PROJECT_DIR/temp -name "*.zip" -mtime +1 -delete
+
+# VACUUM e ANALYZE do PostgreSQL - Executar semanalmente aos domingos às 5h
+0 5 * * 0 psql -U etl_user -d etl_receita_federal -c "VACUUM ANALYZE;"
+
+# Notificação sobre arquivos com erro - Verificar diariamente às 9h (opcional)
+# 0 9 * * * cd $PROJECT_DIR && psql -U etl_user -d etl_receita_federal -c "SELECT COUNT(*) FROM etl_control_files WHERE status = 'error';" | grep -v "0 rows" && echo "Arquivos com erro no ETL" | mail -s "ETL Warning" seu-email@example.com
