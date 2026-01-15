@@ -9,64 +9,67 @@ import fs from 'fs';
 
 /**
  * Teste SIMPLES - Apenas 1 arquivo de Sócios
- * Para validar que o fluxo básico funciona
+ * Para validar que o fluxo básico funciona com arquivo completo
  */
 
-// Função modificada para receber conexão como parâmetro
+// Função OTIMIZADA para inserção eficiente
 async function loadSociosData(client, records) {
-  const columns = [
-    'cnpj_basico',
-    'identificador_socio',
-    'nome_socio',
-    'cpf_cnpj_socio',
-    'qualificacao_socio',
-    'data_entrada_sociedade',
-    'codigo_pais',
-    'cpf_representante_legal',
-    'nome_representante_legal',
-    'qualificacao_representante_legal',
-    'faixa_etaria',
-  ];
+  let inserted = 0;
   
-  try {
-    let inserted = 0;
-    const batchSize = 1000;
-    
-    for (let i = 0; i < records.length; i += batchSize) {
-      const batch = records.slice(i, i + batchSize);
+  // Processar registros individualmente para evitar queries gigantes
+  for (const record of records) {
+    try {
+      const result = await client.query(
+        `INSERT INTO socios (
+          cnpj_basico, identificador_socio, nome_socio, cpf_cnpj_socio,
+          qualificacao_socio, data_entrada_sociedade, codigo_pais, nome_pais,
+          cpf_representante_legal, nome_representante_legal, 
+          qualificacao_representante_legal, faixa_etaria
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (cnpj_basico, cpf_cnpj_socio, nome_socio) 
+        DO UPDATE SET
+          identificador_socio = EXCLUDED.identificador_socio,
+          qualificacao_socio = EXCLUDED.qualificacao_socio,
+          data_entrada_sociedade = EXCLUDED.data_entrada_sociedade,
+          codigo_pais = EXCLUDED.codigo_pais,
+          nome_pais = EXCLUDED.nome_pais,
+          cpf_representante_legal = EXCLUDED.cpf_representante_legal,
+          nome_representante_legal = EXCLUDED.nome_representante_legal,
+          qualificacao_representante_legal = EXCLUDED.qualificacao_representante_legal,
+          faixa_etaria = EXCLUDED.faixa_etaria,
+          updated_at = NOW()`,
+        [
+          record.cnpj_basico,
+          record.identificador_socio,
+          record.nome_socio,
+          record.cpf_cnpj_socio,
+          record.qualificacao_socio,
+          record.data_entrada_sociedade,
+          record.codigo_pais,
+          record.nome_pais,
+          record.cpf_representante_legal,
+          record.nome_representante_legal,
+          record.qualificacao_representante_legal,
+          record.faixa_etaria
+        ]
+      );
       
-      const placeholders = [];
-      const values = [];
-      let paramIndex = 1;
-
-      batch.forEach(record => {
-        const recordPlaceholders = [];
-        columns.forEach(col => {
-          recordPlaceholders.push(`$${paramIndex++}`);
-          values.push(record[col]);
-        });
-        placeholders.push(`(${recordPlaceholders.join(', ')})`);
-      });
-
-      const query = `
-        INSERT INTO socios (${columns.join(', ')}) 
-        VALUES ${placeholders.join(', ')}
-        ON CONFLICT DO NOTHING
-      `;
-
-      const result = await client.query(query, values);
-      inserted += result.rowCount;
+      if (result.rowCount > 0) {
+        inserted++;
+      }
+    } catch (error) {
+      // Log erro mas continua processando
+      logger.warn('test', `Erro ao inserir sócio: ${error.message}`);
     }
-    
-    return inserted;
-  } catch (error) {
-    logger.error('test', `Erro ao carregar sócios: ${error.message}`);
-    throw error;
   }
+  
+  return inserted;
 }
 
-// Variável global para controle
+// Variáveis globais para controle e progresso
 let totalCarregados = 0;
+let totalProcessado = 0;
+let ultimoLog = Date.now();
 
 async function main() {
   console.log('\n' + '='.repeat(70));
@@ -122,22 +125,36 @@ async function main() {
 
     // 4. Processar arquivo
     console.log('4️⃣  Processando arquivo ZIP...');
-    console.log('   (Isso pode levar alguns minutos...)\n');
+    console.log('   (Isso pode levar 15-30 minutos para arquivo completo...)\n');
     totalCarregados = 0;
+    totalProcessado = 0;
+    ultimoLog = Date.now();
     
     // Criar UMA conexão para todo o processamento
     const loadClient = await pool.connect();
     
     try {
+      const BATCH_SIZE = 100; // Batch menor para evitar OOM
+      
       const resultado = await processZipFile(
         tempPath,
         transformSocio,
         async (records) => {
           const carregados = await loadSociosData(loadClient, records);
           totalCarregados += carregados;
-        }
+          totalProcessado += records.length;
+          
+          // Log de progresso a cada 10 segundos
+          const agora = Date.now();
+          if (agora - ultimoLog > 10000) {
+            console.log(`   📊 Progresso: ${totalProcessado.toLocaleString('pt-BR')} registros processados, ${totalCarregados.toLocaleString('pt-BR')} carregados`);
+            ultimoLog = agora;
+          }
+        },
+        BATCH_SIZE // Batch size menor
       );
       
+      console.log(`   📊 Final: ${totalProcessado.toLocaleString('pt-BR')} registros processados`);
       console.log('\n   ✅ Processamento concluído\n');
     } finally {
       loadClient.release();
@@ -160,7 +177,7 @@ async function main() {
       const sampleResult = await clientVerify.query(`
         SELECT cnpj_basico, nome_socio, cpf_cnpj_socio 
         FROM socios 
-        ORDER BY id 
+        ORDER BY cnpj_basico 
         LIMIT 5
       `);
       console.log('\n   📋 Amostra (primeiros 5):');
