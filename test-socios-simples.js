@@ -12,58 +12,92 @@ import fs from 'fs';
  * Para validar que o fluxo básico funciona com arquivo completo
  */
 
-// Função OTIMIZADA para inserção eficiente
+/**
+ * ⚠️ Função OTIMIZADA para evitar OOM:
+ * - Batch INSERT com múltiplos VALUES (rápido)
+ * - Transação por batch (commit imediato)
+ * - Limpeza agressiva de arrays após uso
+ * - Batch size controlado em 500 registros
+ */
 async function loadSociosData(client, records) {
-  let inserted = 0;
+  if (records.length === 0) return 0;
   
-  // Processar registros individualmente para evitar queries gigantes
-  for (const record of records) {
-    try {
-      const result = await client.query(
-        `INSERT INTO socios (
-          cnpj_basico, identificador_socio, nome_socio, cpf_cnpj_socio,
-          qualificacao_socio, data_entrada_sociedade, codigo_pais, nome_pais,
-          cpf_representante_legal, nome_representante_legal, 
-          qualificacao_representante_legal, faixa_etaria
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (cnpj_basico, cpf_cnpj_socio, nome_socio) 
-        DO UPDATE SET
-          identificador_socio = EXCLUDED.identificador_socio,
-          qualificacao_socio = EXCLUDED.qualificacao_socio,
-          data_entrada_sociedade = EXCLUDED.data_entrada_sociedade,
-          codigo_pais = EXCLUDED.codigo_pais,
-          nome_pais = EXCLUDED.nome_pais,
-          cpf_representante_legal = EXCLUDED.cpf_representante_legal,
-          nome_representante_legal = EXCLUDED.nome_representante_legal,
-          qualificacao_representante_legal = EXCLUDED.qualificacao_representante_legal,
-          faixa_etaria = EXCLUDED.faixa_etaria,
-          updated_at = NOW()`,
-        [
-          record.cnpj_basico,
-          record.identificador_socio,
-          record.nome_socio,
-          record.cpf_cnpj_socio,
-          record.qualificacao_socio,
-          record.data_entrada_sociedade,
-          record.codigo_pais,
-          record.nome_pais,
-          record.cpf_representante_legal,
-          record.nome_representante_legal,
-          record.qualificacao_representante_legal,
-          record.faixa_etaria
-        ]
+  // ⚠️ IMPORTANTE: Criar arrays locais que serão destruídos após o INSERT
+  let placeholders = [];
+  let values = [];
+  
+  try {
+    // Iniciar transação
+    await client.query('BEGIN');
+    
+    // Construir query com múltiplos VALUES
+    let paramIndex = 1;
+    
+    for (const record of records) {
+      placeholders.push(
+        `($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6}, $${paramIndex+7}, $${paramIndex+8}, $${paramIndex+9}, $${paramIndex+10})`
       );
-      
-      if (result.rowCount > 0) {
-        inserted++;
-      }
-    } catch (error) {
-      // Log erro mas continua processando
-      logger.warn('test', `Erro ao inserir sócio: ${error.message}`);
+      values.push(
+        record.cnpj_basico,
+        record.identificador_socio,
+        record.nome_socio,
+        record.cpf_cnpj_socio,
+        record.qualificacao_socio,
+        record.data_entrada_sociedade,
+        record.codigo_pais,
+        record.cpf_representante_legal,
+        record.nome_representante_legal,
+        record.qualificacao_representante_legal,
+        record.faixa_etaria
+      );
+      paramIndex += 11;
     }
+    
+    // ⚠️ Construir query (será destruída após o INSERT)
+    const query = `
+      INSERT INTO socios (
+        cnpj_basico, identificador_socio, nome_socio, cpf_cnpj_socio,
+        qualificacao_socio, data_entrada_sociedade, codigo_pais,
+        cpf_representante_legal, nome_representante_legal, 
+        qualificacao_representante_legal, faixa_etaria
+      ) VALUES ${placeholders.join(', ')}
+    `;
+    
+    // Executar INSERT
+    const result = await client.query(query, values);
+    
+    // ⚠️ COMMIT IMEDIATO - libera locks e buffers do PostgreSQL
+    await client.query('COMMIT');
+    
+    // ⚠️ LIMPEZA AGRESSIVA: Destruir arrays grandes IMEDIATAMENTE
+    // Isso sinaliza ao GC que pode liberar memória
+    placeholders.length = 0;
+    placeholders = null;
+    values.length = 0;
+    values = null;
+    
+    return result.rowCount || 0;
+  } catch (error) {
+    // Rollback em caso de erro
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      // Ignorar erro de rollback se conexão foi perdida
+    }
+    
+    // ⚠️ Limpar arrays mesmo em caso de erro
+    if (placeholders) {
+      placeholders.length = 0;
+      placeholders = null;
+    }
+    if (values) {
+      values.length = 0;
+      values = null;
+    }
+    
+    logger.error('test', `Erro ao inserir batch de sócios: ${error.message}`);
+    return 0;
   }
-  
-  return inserted;
 }
 
 // Variáveis globais para controle e progresso
@@ -133,16 +167,26 @@ async function main() {
     // Criar UMA conexão para todo o processamento
     const loadClient = await pool.connect();
     
+    // ⚠️ Declarar 'resultado' fora do try para usar depois
+    let resultado;
+    
     try {
-      const BATCH_SIZE = 100; // Batch menor para evitar OOM
+      // ⚠️ BATCH_SIZE OTIMIZADO: 500 registros
+      // - Não muito pequeno (seria lento demais com muitas queries)
+      // - Não muito grande (evita queries SQL gigantes e OOM)
+      // - Com 11 colunas = 5.500 valores por batch (aceitável)
+      const BATCH_SIZE = 500;
       
-      const resultado = await processZipFile(
+      resultado = await processZipFile(
         tempPath,
         transformSocio,
         async (records) => {
           const carregados = await loadSociosData(loadClient, records);
           totalCarregados += carregados;
           totalProcessado += records.length;
+          
+          // ⚠️ Derreferenciar explicitamente após uso
+          records.length = 0;
           
           // Log de progresso a cada 10 segundos
           const agora = Date.now();
@@ -151,7 +195,7 @@ async function main() {
             ultimoLog = agora;
           }
         },
-        BATCH_SIZE // Batch size menor
+        BATCH_SIZE // ⚠️ Agora processZipFile aceita este parâmetro!
       );
       
       console.log(`   📊 Final: ${totalProcessado.toLocaleString('pt-BR')} registros processados`);

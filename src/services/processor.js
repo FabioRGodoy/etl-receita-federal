@@ -11,10 +11,14 @@ import logger from '../config/logger.js';
 
 /**
  * Processa arquivo ZIP extraindo CSVs e parseando linha a linha
+ * @param {string} zipPath - Caminho do arquivo ZIP
+ * @param {function} transformer - Função que transforma cada linha
+ * @param {function} onData - Callback async para processar batches
+ * @param {number} batchSize - Tamanho do batch (default: 500)
  */
-export async function processZipFile(zipPath, transformer, onData) {
+export async function processZipFile(zipPath, transformer, onData, batchSize = 500) {
   return new Promise((resolve, reject) => {
-    logger.info('processor', `Processando arquivo: ${zipPath}`);
+    logger.info('processor', `Processando arquivo: ${zipPath} (batch size: ${batchSize})`);
     
     let totalRecords = 0;
     let errors = 0;
@@ -52,58 +56,102 @@ export async function processZipFile(zipPath, transformer, onData) {
           }
 
           let records = [];
-          const BATCH_SIZE = 5000; // Processar a cada 5000 registros
+          let isProcessing = false; // Flag para controlar backpressure
           
-          readStream
-            .pipe(csv({
-              separator: ';',
-              headers: false,
-              skipLines: 0,
-              quote: '"',
-            }))
-            .on('data', async (row) => {
-              try {
-                // Transformar dados
-                const transformed = transformer(row);
-                if (transformed) {
-                  records.push(transformed);
-                  totalRecords++;
+          const csvStream = readStream.pipe(csv({
+            separator: ';',
+            headers: false,
+            skipLines: 0,
+            quote: '"',
+          }));
+          
+          csvStream.on('data', (row) => {
+            try {
+              // Transformar dados
+              const transformed = transformer(row);
+              if (transformed) {
+                records.push(transformed);
+                totalRecords++;
+                
+                // ⚠️ CORREÇÃO CRÍTICA: PAUSAR stream durante processamento do batch
+                // Isso evita acúmulo de dados em memória (backpressure)
+                if (records.length >= batchSize && !isProcessing) {
+                  isProcessing = true;
                   
-                  // Processar batch quando atingir o tamanho
-                  if (records.length >= BATCH_SIZE) {
-                    try {
-                      await onData(records);
-                      records = []; // Limpar array para liberar memória
-                    } catch (error) {
-                      logger.error('processor', 'Erro ao processar batch', error.message);
+                  // Pausar o stream ANTES de processar
+                  csvStream.pause();
+                  
+                  // Fazer cópia do array e limpar imediatamente
+                  const batchToProcess = records;
+                  records = []; // ⚠️ Limpar ANTES do await para liberar referência
+                  
+                  // Processar batch de forma assíncrona
+                  onData(batchToProcess)
+                    .then(() => {
+                      // ⚠️ Derreferenciar explicitamente o batch processado
+                      batchToProcess.length = 0;
+                      isProcessing = false;
+                      
+                      // Retomar o stream após processar com sucesso
+                      csvStream.resume();
+                    })
+                    .catch((error) => {
+                      // ⚠️ CRÍTICO: Em caso de erro, DESTRUIR o stream
+                      // Não faz sentido continuar processando se INSERT falhou
+                      logger.error('processor', 'Erro FATAL ao processar batch - abortando stream', error.message);
                       errors++;
-                    }
-                  }
+                      batchToProcess.length = 0;
+                      isProcessing = false;
+                      
+                      // Destruir o stream com erro - isso propaga para .on('error')
+                      csvStream.destroy(error);
+                    });
                 }
+              }
+            } catch (error) {
+              errors++;
+              logger.warn('processor', `Erro ao transformar linha ${totalRecords}`, error.message);
+            }
+          });
+          
+          csvStream.on('end', async () => {
+            logger.info('processor', `CSV processado: ${entry.fileName} (${totalRecords} registros)`);
+            
+            // Aguardar processamento em andamento terminar
+            while (isProcessing) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Processar registros restantes
+            if (records.length > 0) {
+              try {
+                await onData(records);
+                records.length = 0; // ⚠️ Limpar explicitamente
+                records = null; // ⚠️ Derreferenciar
               } catch (error) {
+                // ⚠️ CRÍTICO: Erro no batch final também deve abortar
+                logger.error('processor', 'Erro FATAL ao processar batch final', error.message);
                 errors++;
-                logger.warn('processor', `Erro ao transformar linha ${totalRecords}`, error.message);
+                
+                // Emitir erro para ser capturado pelo handler
+                csvStream.emit('error', error);
+                return; // Não chamar readEntry() - arquivo falhou
               }
-            })
-            .on('end', async () => {
-              logger.info('processor', `CSV processado: ${entry.fileName} (${totalRecords} registros)`);
-              
-              // Processar registros restantes
-              if (records.length > 0) {
-                try {
-                  await onData(records);
-                  records = [];
-                } catch (error) {
-                  logger.error('processor', 'Erro ao processar batch final', error.message);
-                }
-              }
-              
-              zipfile.readEntry();
-            })
-            .on('error', (error) => {
-              logger.error('processor', 'Erro no parse do CSV', error.message);
-              zipfile.readEntry();
-            });
+            }
+            
+            zipfile.readEntry();
+          });
+          
+          csvStream.on('error', (error) => {
+            // ⚠️ CRÍTICO: Erro fatal (ex: falha no INSERT) deve abortar todo o processamento
+            logger.error('processor', 'Erro FATAL no processamento do CSV', error.message);
+            errors++;
+            
+            // Fechar o zipfile e rejeitar a Promise
+            // Isso garante que o ETL saiba que houve falha
+            zipfile.close();
+            reject(new Error(`Erro fatal ao processar ${entry.fileName}: ${error.message}`));
+          });
         });
       });
 
