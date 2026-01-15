@@ -38,9 +38,19 @@ export async function processZipFile(zipPath, transformer, onData, batchSize = 5
           return;
         }
 
-        // Processar apenas arquivos CSV (aceita .csv ou que contenha CSV no nome)
+        // Processar apenas arquivos CSV (aceita .csv ou padrões da Receita Federal)
         const fileName = entry.fileName.toLowerCase();
-        if (!fileName.endsWith('.csv') && !fileName.includes('csv')) {
+        const isCSV = 
+          fileName.endsWith('.csv') || 
+          fileName.includes('csv') ||
+          fileName.endsWith('.estabele') ||  // Estabelecimentos: K3241.K03200Y0.D51213.ESTABELE
+          fileName.endsWith('.sociocsv') ||  // Sócios: K3241.K03200Y0.D51213.SOCIOCSV
+          fileName.endsWith('.municcsv') ||  // Municípios: K3241.K03200Y0.D51213.MUNICCSV
+          fileName.includes('estabele') ||   // Qualquer variação de estabelecimentos
+          fileName.includes('socio') ||      // Qualquer variação de sócios
+          fileName.includes('munic');         // Qualquer variação de municípios
+        
+        if (!isCSV) {
           logger.warn('processor', `Ignorando arquivo não-CSV: ${entry.fileName}`);
           zipfile.readEntry();
           return;
