@@ -3,10 +3,12 @@ import yauzl from 'yauzl';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 import logger from '../config/logger.js';
+import { updateFileCheckpoint, getFileCheckpoint } from './control.js';
 
 /**
  * Stream Processor
  * Descompacta ZIP e parseia CSV linha a linha via streaming
+ * com suporte a checkpoint e resume
  */
 
 /**
@@ -15,13 +17,30 @@ import logger from '../config/logger.js';
  * @param {function} transformer - Função que transforma cada linha
  * @param {function} onData - Callback async para processar batches
  * @param {number} batchSize - Tamanho do batch (default: 500)
+ * @param {number} fileId - ID do arquivo no controle (para checkpoint)
  */
-export async function processZipFile(zipPath, transformer, onData, batchSize = 500) {
+export async function processZipFile(zipPath, transformer, onData, batchSize = 500, fileId = null) {
+  // Recuperar checkpoint se houver
+  let checkpoint = null;
+  let skipLines = 0;
+  
+  if (fileId) {
+    checkpoint = await getFileCheckpoint(fileId);
+    if (checkpoint?.linesProcessed) {
+      skipLines = checkpoint.linesProcessed;
+      logger.info('processor', `📋 Retomando do checkpoint: linha ${skipLines.toLocaleString()}`);
+    }
+  }
+  
   return new Promise((resolve, reject) => {
     logger.info('processor', `Processando arquivo: ${zipPath} (batch size: ${batchSize})`);
     
-    let totalRecords = 0;
+    let totalRecords = skipLines; // Começar da linha salva
+    let currentLine = 0;
     let errors = 0;
+    let csvFileName = null;
+    let lastCheckpointTime = Date.now();
+    const CHECKPOINT_INTERVAL = 30000; // Salvar checkpoint a cada 30s
 
     yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
       if (err) {
@@ -56,6 +75,7 @@ export async function processZipFile(zipPath, transformer, onData, batchSize = 5
           return;
         }
 
+        csvFileName = entry.fileName;
         logger.info('processor', `Extraindo e processando: ${entry.fileName}`);
 
         zipfile.openReadStream(entry, (err, readStream) => {
@@ -77,6 +97,13 @@ export async function processZipFile(zipPath, transformer, onData, batchSize = 5
           
           csvStream.on('data', (row) => {
             try {
+              currentLine++;
+              
+              // Pular linhas já processadas (resume)
+              if (currentLine <= skipLines) {
+                return;
+              }
+              
               // Transformar dados
               const transformed = transformer(row);
               if (transformed) {
@@ -97,7 +124,19 @@ export async function processZipFile(zipPath, transformer, onData, batchSize = 5
                   
                   // Processar batch de forma assíncrona
                   onData(batchToProcess)
-                    .then(() => {
+                    .then(async () => {
+                      // Salvar checkpoint periodicamente
+                      const now = Date.now();
+                      if (fileId && (now - lastCheckpointTime) >= CHECKPOINT_INTERVAL) {
+                        await updateFileCheckpoint(fileId, {
+                          linesProcessed: totalRecords,
+                          csvFileName: csvFileName,
+                          lastCheckpoint: new Date().toISOString()
+                        });
+                        lastCheckpointTime = now;
+                        logger.info('processor', `💾 Checkpoint salvo: ${totalRecords.toLocaleString()} linhas`);
+                      }
+                      
                       // ⚠️ Derreferenciar explicitamente o batch processado
                       batchToProcess.length = 0;
                       isProcessing = false;
@@ -147,6 +186,17 @@ export async function processZipFile(zipPath, transformer, onData, batchSize = 5
                 csvStream.emit('error', error);
                 return; // Não chamar readEntry() - arquivo falhou
               }
+            }
+            
+            // Salvar checkpoint final
+            if (fileId) {
+              await updateFileCheckpoint(fileId, {
+                linesProcessed: totalRecords,
+                csvFileName: csvFileName,
+                completed: true,
+                lastCheckpoint: new Date().toISOString()
+              });
+              logger.info('processor', `✅ Checkpoint final salvo: ${totalRecords.toLocaleString()} linhas`);
             }
             
             zipfile.readEntry();

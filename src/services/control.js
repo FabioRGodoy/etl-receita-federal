@@ -208,6 +208,48 @@ export async function getProcessedFiles(fileType = null) {
   }
 }
 
+/**
+ * Atualiza checkpoint de progresso do arquivo
+ */
+export async function updateFileCheckpoint(fileId, checkpoint) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query(
+      `UPDATE etl_control_files 
+       SET checkpoint = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(checkpoint), fileId]
+    );
+    
+    logger.debug('control', `Checkpoint atualizado: fileId=${fileId}`);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Obtém checkpoint do arquivo
+ */
+export async function getFileCheckpoint(fileId) {
+  const client = await pool.connect();
+  
+  try {
+    const result = await client.query(
+      'SELECT checkpoint FROM etl_control_files WHERE id = $1',
+      [fileId]
+    );
+    
+    if (result.rows[0]?.checkpoint) {
+      return result.rows[0].checkpoint;
+    }
+    
+    return null;
+  } finally {
+    client.release();
+  }
+}
+
 export default {
   createRun,
   updateRun,
@@ -219,4 +261,6 @@ export default {
   markFileAsError,
   getPendingFiles,
   getProcessedFiles,
+  updateFileCheckpoint,
+  getFileCheckpoint,
 };

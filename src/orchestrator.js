@@ -14,6 +14,47 @@ import * as control from './services/control.js';
  * Coordena o fluxo completo do ETL
  */
 
+// Variáveis globais para graceful shutdown
+let isShuttingDown = false;
+let currentFileId = null;
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  logger.warn('orchestrator', '⚠️  SIGTERM recebido - iniciando shutdown gracioso');
+  isShuttingDown = true;
+  
+  if (currentFileId) {
+    logger.info('orchestrator', '💾 Salvando checkpoint do arquivo em processamento...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Aguardar salvamento
+  }
+  
+  try {
+    await pool.end();
+  } catch (err) {
+    logger.error('orchestrator', 'Erro ao fechar pool', err.message);
+  }
+  
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.warn('orchestrator', '⚠️  SIGINT recebido (Ctrl+C) - iniciando shutdown gracioso');
+  isShuttingDown = true;
+  
+  if (currentFileId) {
+    logger.info('orchestrator', '💾 Salvando checkpoint do arquivo em processamento...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  
+  try {
+    await pool.end();
+  } catch (err) {
+    logger.error('orchestrator', 'Erro ao fechar pool', err.message);
+  }
+  
+  process.exit(0);
+});
+
 // Mapeamento de transformers por tipo
 const TRANSFORMERS = {
   [CONFIG.FILE_TYPES.MUNICIPIOS]: transformMunicipio,
@@ -119,7 +160,7 @@ async function loadDataBatch(fileType, records, mode = 'insert') {
 /**
  * Processa um arquivo individual
  */
-async function processFile(fileInfo, mode = 'insert') {
+async function processFile(fileInfo, mode = 'insert', fileId = null) {
   const { fileName, fileUrl, fileType } = fileInfo;
   
   logger.info('orchestrator', `Processando arquivo: ${fileName} (${fileType})`);
@@ -129,11 +170,33 @@ async function processFile(fileInfo, mode = 'insert') {
     throw new Error(`Transformer não encontrado para tipo: ${fileType}`);
   }
 
-  // 1. Download
+  // 1. Download (verificar se já existe primeiro)
   const tempPath = getTempFilePath(fileName);
-  await downloadFile(fileUrl, tempPath);
+  
+  // Verificar se arquivo já foi processado completamente
+  if (fileId) {
+    const checkpoint = await control.getFileCheckpoint(fileId);
+    if (checkpoint?.completed) {
+      logger.info('orchestrator', `✅ Arquivo já processado: ${fileName}`);
+      return {
+        totalRecords: checkpoint.linesProcessed || 0,
+        inserted: 0,
+        updated: 0,
+        errors: 0,
+        skipped: true,
+      };
+    }
+  }
+  
+  // Download apenas se necessário
+  const fs = await import('fs');
+  if (!fs.existsSync(tempPath)) {
+    await downloadFile(fileUrl, tempPath);
+  } else {
+    logger.info('orchestrator', `♻️  Reutilizando arquivo existente: ${fileName}`);
+  }
 
-  // 2. Processar e carregar
+  // 2. Processar e carregar (com checkpoint)
   let totalInserted = 0;
   let totalUpdated = 0;
 
@@ -146,11 +209,18 @@ async function processFile(fileInfo, mode = 'insert') {
       totalUpdated += stats.updated;
       
       logger.info('orchestrator', `Batch carregado: ${stats.inserted || stats.updated} registros`);
-    }
+    },
+    CONFIG.BATCH_SIZE,
+    fileId // Passar fileId para checkpoint
   );
 
-  // 3. Cleanup
-  cleanupFile(tempPath);
+  // 3. Cleanup APENAS se processou com sucesso
+  // ⚠️ Se der erro, mantém o arquivo para retry
+  if (result.totalRecords > 0 && result.errors === 0) {
+    cleanupFile(tempPath);
+  } else {
+    logger.warn('orchestrator', `⚠️  Mantendo arquivo para retry: ${fileName}`);
+  }
 
   return {
     totalRecords: result.totalRecords,
@@ -278,7 +348,14 @@ export async function runETL(options = {}) {
     let failed = 0;
 
     for (const fileRecord of pendingFiles) {
+      // Verificar se está em shutdown
+      if (isShuttingDown) {
+        logger.warn('orchestrator', '⚠️  Shutdown em andamento - parando processamento');
+        break;
+      }
+      
       const fileId = fileRecord.id;
+      currentFileId = fileId; // Armazenar para graceful shutdown
       
       try {
         logger.info('orchestrator', `[${completed + 1}/${pendingFiles.length}] ${fileRecord.file_name}`);
@@ -286,7 +363,7 @@ export async function runETL(options = {}) {
         // Marcar como processando
         await control.markFileAsProcessing(fileId);
 
-        // Processar
+        // Processar (com checkpoint)
         const mode = loadType === CONFIG.LOAD_TYPE.DELTA ? 'upsert' : 'insert';
         const stats = await processFile(
           {
@@ -294,7 +371,8 @@ export async function runETL(options = {}) {
             fileUrl: fileRecord.file_url,
             fileType: fileRecord.file_type,
           },
-          mode
+          mode,
+          fileId // Passar fileId para checkpoint
         );
 
         // Marcar como concluído
@@ -302,14 +380,37 @@ export async function runETL(options = {}) {
         
         completed++;
         logger.info('orchestrator', `✅ Arquivo concluído: ${stats.totalRecords} registros, ${stats.inserted || stats.updated} carregados`);
+        
+        currentFileId = null; // Limpar após sucesso
       } catch (error) {
         failed++;
         logger.error('orchestrator', `❌ Erro no arquivo ${fileRecord.file_name}`, error.message);
         
         await control.markFileAsError(fileId, error.message);
         
-        // Continuar com próximo arquivo
+        currentFileId = null; // Limpar após erro
+        
+        // ⚠️ Continuar com próximo arquivo (não abortar ETL inteiro)
       }
+    }
+    
+    // Verificar se foi interrompido
+    if (isShuttingDown) {
+      logger.warn('orchestrator', '⚠️  ETL interrompido por shutdown - pode ser retomado');
+      
+      await control.updateRun(runId, {
+        files_completed: completed,
+        files_failed: failed,
+        status: 'interrupted',
+        completed_at: new Date(),
+      });
+      
+      return {
+        success: false,
+        completed,
+        failed,
+        message: 'ETL interrompido - retome executando novamente',
+      };
     }
 
     // 8. Finalizar run
