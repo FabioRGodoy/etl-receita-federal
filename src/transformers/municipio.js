@@ -3,6 +3,8 @@
  * Transforma dados brutos do CSV em formato adequado ao banco
  */
 
+import { sanitizeRecord, parseInteger, safeTrim } from '../utils/sanitize.js';
+
 /**
  * Layout do arquivo de municípios da Receita Federal:
  * 0: Código do Município
@@ -11,18 +13,20 @@
 
 export function transformMunicipio(row) {
   try {
-    const codigo = row[0] ? parseInt(row[0].trim()) : null;
-    const nome = row[1] ? row[1].trim() : null;
+    const codigo = parseInteger(row[0]);
+    const nome = safeTrim(row[1]);
 
     // Validação básica
     if (!codigo || !nome) {
       return null;
     }
 
-    return {
+    const record = {
       codigo_municipio: codigo,
       nome_municipio: nome,
     };
+    
+    return sanitizeRecord(record);
   } catch (error) {
     throw new Error(`Erro ao transformar município: ${error.message}`);
   }

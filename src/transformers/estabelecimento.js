@@ -3,6 +3,8 @@
  * Transforma dados brutos do CSV em formato adequado ao banco
  */
 
+import { sanitizeRecord, parseDate, parseInteger, safeTrim } from '../utils/sanitize.js';
+
 /**
  * Layout do arquivo de estabelecimentos da Receita Federal:
  * 0: CNPJ Básico
@@ -37,34 +39,11 @@
  * 29: Data Situação Especial
  */
 
-function parseDate(dateStr) {
-  if (!dateStr || dateStr.trim() === '' || dateStr === '0') {
-    return null;
-  }
-  
-  // Formato: YYYYMMDD
-  const year = dateStr.substring(0, 4);
-  const month = dateStr.substring(4, 6);
-  const day = dateStr.substring(6, 8);
-  
-  return `${year}-${month}-${day}`;
-}
-
-function trim(str) {
-  return str ? str.trim() : null;
-}
-
-function parseInt(str) {
-  if (!str || str.trim() === '') return null;
-  const num = Number.parseInt(str);
-  return isNaN(num) ? null : num;
-}
-
 export function transformEstabelecimento(row) {
   try {
-    const cnpjBasico = trim(row[0]);
-    const cnpjOrdem = trim(row[1]);
-    const cnpjDv = trim(row[2]);
+    const cnpjBasico = safeTrim(row[0]);
+    const cnpjOrdem = safeTrim(row[1]);
+    const cnpjDv = safeTrim(row[2]);
     
     if (!cnpjBasico || !cnpjOrdem || !cnpjDv) {
       return null;
@@ -72,12 +51,47 @@ export function transformEstabelecimento(row) {
 
     const cnpj = cnpjBasico + cnpjOrdem + cnpjDv;
 
-    return {
+    const record = {
       cnpj_basico: cnpjBasico,
       cnpj_ordem: cnpjOrdem,
       cnpj_dv: cnpjDv,
       cnpj: cnpj,
-      identificador_matriz_filial: parseInt(row[3]),
+      identificador_matriz_filial: parseInteger(row[3]),
+      nome_fantasia: safeTrim(row[4]),
+      situacao_cadastral: parseInteger(row[5]),
+      data_situacao_cadastral: parseDate(row[6]),
+      motivo_situacao_cadastral: parseInteger(row[7]),
+      nome_cidade_exterior: safeTrim(row[8]),
+      codigo_pais: safeTrim(row[9]),
+      data_inicio_atividade: parseDate(row[10]),
+      cnae_fiscal_principal: safeTrim(row[11]),
+      cnae_fiscal_secundaria: safeTrim(row[12]),
+      tipo_logradouro: safeTrim(row[13]),
+      logradouro: safeTrim(row[14]),
+      numero: safeTrim(row[15]),
+      complemento: safeTrim(row[16]),
+      bairro: safeTrim(row[17]),
+      cep: safeTrim(row[18]),
+      uf: safeTrim(row[19]),
+      codigo_municipio: parseInteger(row[20]),
+      ddd1: safeTrim(row[21]),
+      telefone1: safeTrim(row[22]),
+      ddd2: safeTrim(row[23]),
+      telefone2: safeTrim(row[24]),
+      ddd_fax: safeTrim(row[25]),
+      fax: safeTrim(row[26]),
+      correio_eletronico: safeTrim(row[27]),
+      situacao_especial: safeTrim(row[28]),
+      data_situacao_especial: parseDate(row[29]),
+    };
+    
+    // Sanitizar todo o registro para garantir
+    return sanitizeRecord(record);
+  } catch (error) {
+    console.error('Erro ao transformar estabelecimento:', error.message);
+    return null;
+  }
+}
       nome_fantasia: trim(row[4]),
       situacao_cadastral: parseInt(row[5]),
       data_situacao_cadastral: parseDate(row[6]),
