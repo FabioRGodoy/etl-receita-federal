@@ -9,6 +9,9 @@ export const CONFIG = {
   // Processamento
   BATCH_SIZE: parseInt(process.env.BATCH_SIZE || '1000'),
   DOWNLOAD_TIMEOUT: parseInt(process.env.DOWNLOAD_TIMEOUT || '600000'), // 10 minutos
+  DOWNLOAD_RETRIES: parseInt(process.env.DOWNLOAD_RETRIES || '8'),
+  DOWNLOAD_RETRY_DELAY_MS: parseInt(process.env.DOWNLOAD_RETRY_DELAY_MS || '5000'),
+  DOWNLOAD_INACTIVITY_TIMEOUT: parseInt(process.env.DOWNLOAD_INACTIVITY_TIMEOUT || '120000'),
   
   // Diretórios
   TEMP_DIR: process.env.TEMP_DIR || './temp',

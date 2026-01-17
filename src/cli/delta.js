@@ -34,7 +34,9 @@ async function main() {
   console.log('='.repeat(80));
   console.log();
   
-  const baseUrl = process.argv[2] || CONFIG.BASE_URL;
+  // Filtrar apenas argumentos que não são flags (não começam com --)
+  const args = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+  const baseUrl = args[0] || CONFIG.BASE_URL;
   
   console.log(`URL Base: ${baseUrl}`);
   console.log(`Tipo: DELTA (apenas arquivos novos, usa UPSERT)`);
@@ -45,9 +47,9 @@ async function main() {
   const startTime = Date.now();
 
   try {
-    // 1. Descobrir todos os arquivos disponíveis
-    const allFiles = await discoverFiles(baseUrl);
-    console.log(`📦 Total de arquivos disponíveis: ${allFiles.length}`);
+    // 1. Descobrir arquivos do mês/ano mais recente
+    const allFiles = await discoverFiles(baseUrl, { latestOnly: true });
+    console.log(`📦 Total de arquivos disponíveis (mês mais recente): ${allFiles.length}`);
 
     // 2. Buscar arquivos já processados
     const processedFiles = await getProcessedFiles();

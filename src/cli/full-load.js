@@ -14,14 +14,17 @@ async function main() {
   console.log('ETL Receita Federal - FULL LOAD');
   console.log('='.repeat(80));
   console.log();
-  console.log('⚠️  ATENÇÃO: Este processo pode demorar 10-15 horas!');
+  console.log('⚠️  ATENÇÃO: Este processo pode demorar algumas horas!');
   console.log('⚠️  Recomendado rodar overnight ou em sessão screen/tmux');
   console.log();
   
-  const baseUrl = process.argv[2] || CONFIG.BASE_URL;
+  // Filtrar apenas argumentos que não são flags (não começam com --)
+  const args = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+  const baseUrl = args[0] || CONFIG.BASE_URL;
   
   console.log(`URL Base: ${baseUrl}`);
   console.log(`Tipo: FULL LOAD (trunca tabelas e recarrega tudo)`);
+  console.log(`Modo: Apenas mês/ano mais recente`);
   console.log();
   
   // Confirmação
@@ -41,6 +44,7 @@ async function main() {
     const result = await runETL({
       baseUrl,
       loadType: CONFIG.LOAD_TYPE.FULL,
+      latestOnly: true, // Apenas mês/ano mais recente
     });
 
     const endTime = Date.now();

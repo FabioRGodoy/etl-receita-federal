@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS etl_control_files (
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     error_message TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_etl_status ON etl_control_files(status);

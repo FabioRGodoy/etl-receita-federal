@@ -181,9 +181,18 @@ export async function runETL(options = {}) {
     baseUrl = CONFIG.BASE_URL,
     loadType = CONFIG.LOAD_TYPE.FULL,
     filesToProcess = null, // Se null, processa todos
+    latestOnly = true, // Padrão: apenas mês mais recente
+    year = null,
+    month = null,
+    fileTypes = null,
   } = options;
 
-  logger.info('orchestrator', `Iniciando ETL - Tipo: ${loadType}`);
+  logger.info('orchestrator', `Iniciando ETL - Tipo: ${loadType}`, {
+    latestOnly,
+    year,
+    month,
+    fileTypes,
+  });
 
   // 1. Testar conexão
   const dbTest = await testConnection();
@@ -206,7 +215,27 @@ export async function runETL(options = {}) {
     if (filesToProcess) {
       files = filesToProcess;
     } else {
-      files = await discoverFiles(baseUrl);
+      files = await discoverFiles(baseUrl, {
+        latestOnly,
+        year,
+        month,
+        fileTypes,
+      });
+    }
+
+    if (files.length === 0) {
+      logger.warn('orchestrator', 'Nenhum arquivo encontrado para processar');
+      await control.updateRun(runId, {
+        total_files: 0,
+        status: 'completed',
+        completed_at: new Date(),
+      });
+      return {
+        success: false,
+        completed: 0,
+        failed: 0,
+        message: 'Nenhum arquivo encontrado',
+      };
     }
 
     await control.updateRun(runId, { total_files: files.length });

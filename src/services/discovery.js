@@ -152,10 +152,55 @@ function parseDirectoryName(dirName) {
 }
 
 /**
- * Descobre todos os arquivos disponíveis
+ * Encontra o diretório mais recente (ano/mês)
  */
-export async function discoverFiles(baseUrl = CONFIG.BASE_URL) {
-  logger.info('discovery', 'Iniciando descoberta de arquivos');
+function findLatestDirectory(directories) {
+  if (directories.length === 0) {
+    return null;
+  }
+
+  // Parsear e ordenar por ano/mês decrescente
+  const parsed = directories
+    .map(dir => ({
+      ...dir,
+      ...parseDirectoryName(dir.name),
+    }))
+    .filter(d => d.year) // Apenas diretórios com ano válido
+    .sort((a, b) => {
+      // Ordenar por ano DESC, depois mês DESC
+      const yearDiff = (b.year || 0) - (a.year || 0);
+      if (yearDiff !== 0) return yearDiff;
+      return (b.month || 0) - (a.month || 0);
+    });
+
+  return parsed.length > 0 ? parsed[0] : null;
+}
+
+/**
+ * Descobre arquivos do mês/ano mais recente disponível
+ * 
+ * @param {string} baseUrl - URL base da Receita Federal
+ * @param {Object} options - Opções de busca
+ * @param {boolean} options.latestOnly - Se true, busca apenas mês mais recente (padrão: true)
+ * @param {number} options.year - Ano específico (opcional)
+ * @param {number} options.month - Mês específico (opcional)
+ * @param {Array<string>} options.fileTypes - Tipos de arquivo para filtrar (opcional)
+ */
+export async function discoverFiles(baseUrl = CONFIG.BASE_URL, options = {}) {
+  const {
+    latestOnly = true, // Padrão: apenas mais recente
+    year = null,
+    month = null,
+    fileTypes = null,
+  } = options;
+
+  logger.info('discovery', 'Iniciando descoberta de arquivos', {
+    latestOnly,
+    year,
+    month,
+    fileTypes,
+  });
+
   const allFiles = [];
 
   try {
@@ -163,8 +208,14 @@ export async function discoverFiles(baseUrl = CONFIG.BASE_URL) {
     const baseFiles = await fetchFilesFromUrl(baseUrl);
     
     if (baseFiles.length > 0) {
-      // Arquivos encontrados diretamente na raiz
-      baseFiles.forEach(file => {
+      logger.info('discovery', `Arquivos encontrados na raiz: ${baseFiles.length}`);
+      
+      // Filtrar por tipo se especificado
+      const filteredBaseFiles = fileTypes
+        ? baseFiles.filter(f => fileTypes.includes(f.fileType))
+        : baseFiles;
+
+      filteredBaseFiles.forEach(file => {
         allFiles.push({
           ...file,
           fileYear: null,
@@ -176,32 +227,87 @@ export async function discoverFiles(baseUrl = CONFIG.BASE_URL) {
     // Buscar diretórios (anos/meses)
     const directories = await fetchDirectories(baseUrl);
     
-    for (const dir of directories) {
-      const { year, month } = parseDirectoryName(dir.name);
+    let dirsToProcess = directories;
+
+    // FILTRO: Se latestOnly = true, processar apenas o mais recente
+    if (latestOnly && directories.length > 0) {
+      const latest = findLatestDirectory(directories);
+      
+      if (latest) {
+        logger.info('discovery', `📅 Usando apenas o diretório mais recente: ${latest.name} (${latest.year}-${String(latest.month || 0).padStart(2, '0')})`);
+        dirsToProcess = [latest];
+      } else {
+        logger.warn('discovery', 'Nenhum diretório válido encontrado');
+        dirsToProcess = [];
+      }
+    }
+
+    // FILTRO: Por ano/mês específicos (sobrescreve latestOnly)
+    if (year || month) {
+      logger.info('discovery', `🔍 Filtrando por ano=${year || 'qualquer'}, mês=${month || 'qualquer'}`);
+      
+      dirsToProcess = dirsToProcess.filter(dir => {
+        const parsed = parseDirectoryName(dir.name);
+        if (year && parsed.year !== year) return false;
+        if (month && parsed.month !== month) return false;
+        return true;
+      });
+      
+      logger.info('discovery', `${dirsToProcess.length} diretórios após filtros`);
+    }
+
+    // Processar diretórios selecionados
+    for (const dir of dirsToProcess) {
+      const { year: dirYear, month: dirMonth } = parseDirectoryName(dir.name);
       
       // Buscar arquivos no diretório
       const dirFiles = await fetchFilesFromUrl(dir.url);
       
-      dirFiles.forEach(file => {
+      // Filtrar por tipo se especificado
+      const filteredDirFiles = fileTypes
+        ? dirFiles.filter(f => fileTypes.includes(f.fileType))
+        : dirFiles;
+
+      filteredDirFiles.forEach(file => {
         allFiles.push({
           ...file,
-          fileYear: year,
-          fileMonth: month,
+          fileYear: dirYear,
+          fileMonth: dirMonth,
         });
       });
 
       // Se o diretório parece ser um ano (4 dígitos), buscar subdiretórios de mês
-      if (year && !month) {
+      if (dirYear && !dirMonth) {
+        logger.info('discovery', `Buscando subdiretórios de mês em ${dir.name}`);
+        
         const subDirs = await fetchDirectories(dir.url);
         
-        for (const subDir of subDirs) {
+        // Se latestOnly, pegar apenas o subdiretório mais recente
+        const subDirsToProcess = latestOnly && subDirs.length > 0
+          ? [findLatestDirectory(subDirs)].filter(Boolean)
+          : subDirs;
+
+        for (const subDir of subDirsToProcess) {
           const subParsed = parseDirectoryName(subDir.name);
+          
+          // Aplicar filtro de mês se especificado
+          if (month && subParsed.month !== month) {
+            continue;
+          }
+          
+          logger.info('discovery', `📂 Processando subdiretório: ${subDir.name}`);
+          
           const subFiles = await fetchFilesFromUrl(subDir.url);
           
-          subFiles.forEach(file => {
+          // Filtrar por tipo se especificado
+          const filteredSubFiles = fileTypes
+            ? subFiles.filter(f => fileTypes.includes(f.fileType))
+            : subFiles;
+          
+          filteredSubFiles.forEach(file => {
             allFiles.push({
               ...file,
-              fileYear: year,
+              fileYear: dirYear,
               fileMonth: subParsed.month || subParsed.year,
             });
           });
@@ -225,7 +331,7 @@ export async function discoverFiles(baseUrl = CONFIG.BASE_URL) {
       return a.sequence - b.sequence;
     });
 
-    logger.info('discovery', `Descoberta completa: ${allFiles.length} arquivos encontrados`);
+    logger.info('discovery', `✅ Descoberta completa: ${allFiles.length} arquivos encontrados`);
     
     // Agrupar por tipo
     const summary = allFiles.reduce((acc, file) => {
@@ -233,7 +339,21 @@ export async function discoverFiles(baseUrl = CONFIG.BASE_URL) {
       return acc;
     }, {});
     
-    logger.info('discovery', 'Resumo por tipo:', summary);
+    logger.info('discovery', '📊 Resumo por tipo:', summary);
+
+    // Log dos arquivos encontrados (primeiros 5 de cada tipo)
+    ['municipios', 'estabelecimentos', 'socios'].forEach(type => {
+      const filesOfType = allFiles.filter(f => f.fileType === type);
+      if (filesOfType.length > 0) {
+        logger.info('discovery', `📄 ${type.toUpperCase()}:`);
+        filesOfType.slice(0, 5).forEach(f => {
+          logger.info('discovery', `   - ${f.fileName} (${f.fileYear}-${String(f.fileMonth || 0).padStart(2, '0')})`);
+        });
+        if (filesOfType.length > 5) {
+          logger.info('discovery', `   ... e mais ${filesOfType.length - 5} arquivos`);
+        }
+      }
+    });
 
     return allFiles;
   } catch (error) {
