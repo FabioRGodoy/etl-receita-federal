@@ -92,36 +92,5 @@ export function transformEstabelecimento(row) {
     return null;
   }
 }
-      nome_fantasia: trim(row[4]),
-      situacao_cadastral: parseInt(row[5]),
-      data_situacao_cadastral: parseDate(row[6]),
-      motivo_situacao_cadastral: parseInt(row[7]),
-      nome_cidade_exterior: trim(row[8]),
-      codigo_pais: parseInt(row[9]),
-      data_inicio_atividade: parseDate(row[10]),
-      cnae_fiscal_principal: parseInt(row[11]),
-      cnae_fiscal_secundaria: trim(row[12]),
-      tipo_logradouro: trim(row[13]),
-      logradouro: trim(row[14]),
-      numero: trim(row[15]),
-      complemento: trim(row[16]),
-      bairro: trim(row[17]),
-      cep: trim(row[18]),
-      uf: trim(row[19]),
-      codigo_municipio: parseInt(row[20]),
-      ddd1: trim(row[21]),
-      telefone1: trim(row[22]),
-      ddd2: trim(row[23]),
-      telefone2: trim(row[24]),
-      ddd_fax: trim(row[25]),
-      fax: trim(row[26]),
-      correio_eletronico: trim(row[27]),
-      situacao_especial: trim(row[28]),
-      data_situacao_especial: parseDate(row[29]),
-    };
-  } catch (error) {
-    throw new Error(`Erro ao transformar estabelecimento: ${error.message}`);
-  }
-}
 
 export default { transformEstabelecimento };
