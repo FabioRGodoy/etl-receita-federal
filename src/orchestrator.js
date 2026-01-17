@@ -246,8 +246,19 @@ export async function runETL(options = {}) {
     await control.updateRun(runId, { total_files: files.length });
     logger.info('orchestrator', `${files.length} arquivos para processar`);
 
-    // 5. Registrar arquivos no controle
-    for (const file of files) {
+    // 5. Ordenar arquivos: municipios -> estabelecimentos -> socios
+    // Isso garante que as FKs sejam respeitadas
+    const sortedFiles = files.sort((a, b) => {
+      const order = {
+        [CONFIG.FILE_TYPES.MUNICIPIOS]: 1,
+        [CONFIG.FILE_TYPES.ESTABELECIMENTOS]: 2,
+        [CONFIG.FILE_TYPES.SOCIOS]: 3,
+      };
+      return (order[a.fileType] || 999) - (order[b.fileType] || 999);
+    });
+    
+    // 6. Registrar arquivos no controle
+    for (const file of sortedFiles) {
       await control.registerFile({
         fileName: file.fileName,
         fileUrl: file.fileUrl,

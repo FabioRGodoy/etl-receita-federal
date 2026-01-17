@@ -2,7 +2,7 @@ import { pool } from './src/config/database.js';
 import fs from 'fs';
 
 async function runMigration() {
-  const sql = fs.readFileSync('./sql/migrate-fix-on-conflict.sql', 'utf8');
+  const sql = fs.readFileSync('./sql/migrate-add-updated-at.sql', 'utf8');
   
   const client = await pool.connect();
   

@@ -161,7 +161,16 @@ export async function getPendingFiles() {
     const result = await client.query(
       `SELECT * FROM etl_control_files 
        WHERE status IN ($1, $2)
-       ORDER BY file_year, file_month, file_type, id`,
+       ORDER BY 
+         file_year, 
+         file_month,
+         CASE file_type
+           WHEN 'municipios' THEN 1
+           WHEN 'estabelecimentos' THEN 2
+           WHEN 'socios' THEN 3
+           ELSE 999
+         END,
+         id`,
       [CONFIG.STATUS.PENDING, CONFIG.STATUS.ERROR]
     );
     
