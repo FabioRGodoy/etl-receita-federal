@@ -280,9 +280,21 @@ export async function runETL(options = {}) {
   const runId = await control.createRun(loadType);
 
   try {
-    // 3. Truncar tabelas se FULL LOAD
+    // 3. Limpar arquivos de controle pendentes antigos se FULL LOAD
     if (loadType === CONFIG.LOAD_TYPE.FULL) {
       await truncateTables();
+      
+      // Limpar arquivos pendentes de runs anteriores
+      const client = await pool.connect();
+      try {
+        await client.query(`
+          DELETE FROM etl_control_files 
+          WHERE status IN ('pending', 'error')
+        `);
+        logger.info('orchestrator', 'Arquivos pendentes antigos removidos');
+      } finally {
+        client.release();
+      }
     }
 
     // 4. Descobrir arquivos
@@ -327,7 +339,7 @@ export async function runETL(options = {}) {
       return (order[a.fileType] || 999) - (order[b.fileType] || 999);
     });
     
-    // 6. Registrar arquivos no controle
+    // 6. Registrar arquivos no controle (já ordenados)
     for (const file of sortedFiles) {
       await control.registerFile({
         fileName: file.fileName,
@@ -336,13 +348,14 @@ export async function runETL(options = {}) {
         fileYear: file.fileYear,
         fileMonth: file.fileMonth,
         loadType: loadType,
+        runId: runId, // Associar ao run atual
       });
     }
 
-    // 6. Buscar arquivos pendentes (para retomada)
-    const pendingFiles = await control.getPendingFiles();
-    logger.info('orchestrator', `${pendingFiles.length} arquivos pendentes`);
-
+    // 7. Buscar arquivos pendentes APENAS do run atual
+    const pendingFiles = await control.getPendingFiles(runId);
+    logger.info('orchestrator', `${pendingFiles.length} arquivos pendentes para este run`);
+8. Processar cada arquivo (já vem ordenado do getPendingFiles)
     // 7. Processar cada arquivo
     let completed = 0;
     let failed = 0;

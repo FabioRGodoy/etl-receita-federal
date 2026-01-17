@@ -74,10 +74,12 @@ export async function registerFile(fileInfo) {
   try {
     const result = await client.query(
       `INSERT INTO etl_control_files 
-       (file_name, file_url, file_type, file_year, file_month, load_type, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (file_name, file_url, file_type, file_year, file_month, load_type, run_id, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (file_name) DO UPDATE SET
          file_url = EXCLUDED.file_url,
+         run_id = EXCLUDED.run_id,
+         status = EXCLUDED.status,
          updated_at = NOW()
        RETURNING id`,
       [
@@ -87,6 +89,7 @@ export async function registerFile(fileInfo) {
         fileInfo.fileYear,
         fileInfo.fileMonth,
         fileInfo.loadType,
+        fileInfo.runId,
         CONFIG.STATUS.PENDING,
       ]
     );
@@ -153,26 +156,39 @@ export async function markFileAsError(fileId, errorMessage) {
 
 /**
  * Busca arquivos pendentes
+ * @param {number} runId - ID do run (opcional, se não informado pega todos)
  */
-export async function getPendingFiles() {
+export async function getPendingFiles(runId = null) {
   const client = await pool.connect();
   
   try {
-    const result = await client.query(
-      `SELECT * FROM etl_control_files 
-       WHERE status IN ($1, $2)
-       ORDER BY 
-         file_year, 
-         file_month,
-         CASE file_type
-           WHEN 'municipios' THEN 1
-           WHEN 'estabelecimentos' THEN 2
-           WHEN 'socios' THEN 3
-           ELSE 999
-         END,
-         id`,
-      [CONFIG.STATUS.PENDING, CONFIG.STATUS.ERROR]
-    );
+    let query = `
+      SELECT * FROM etl_control_files 
+      WHERE status IN ($1, $2)
+    `;
+    
+    const params = [CONFIG.STATUS.PENDING, CONFIG.STATUS.ERROR];
+    
+    // Filtrar por runId se informado
+    if (runId) {
+      query += ` AND run_id = $3`;
+      params.push(runId);
+    }
+    
+    query += `
+      ORDER BY 
+        file_year, 
+        file_month,
+        CASE file_type
+          WHEN 'municipios' THEN 1
+          WHEN 'estabelecimentos' THEN 2
+          WHEN 'socios' THEN 3
+          ELSE 999
+        END,
+        id
+    `;
+    
+    const result = await client.query(query, params);
     
     return result.rows;
   } finally {
