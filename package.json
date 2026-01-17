@@ -8,7 +8,10 @@
     "discovery": "node src/cli/discovery-test.js",
     "full-load": "node src/cli/full-load.js",
     "delta": "node src/cli/delta.js",
-    "test": "node src/cli/discovery-test.js"
+    "test": "node src/cli/discovery-test.js",
+    "limpar-controle": "node limpar-controle.js",
+    "limpar-temp": "node limpar-temp.js",
+    "status": "node verificar-estado.js"
   },
   "keywords": [
     "etl",

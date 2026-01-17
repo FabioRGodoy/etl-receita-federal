@@ -190,10 +190,22 @@ async function processFile(fileInfo, mode = 'insert', fileId = null) {
   
   // Download apenas se necessário
   const fs = await import('fs');
-  if (!fs.existsSync(tempPath)) {
-    await downloadFile(fileUrl, tempPath);
+  const fileExists = fs.existsSync(tempPath);
+  
+  if (fileExists) {
+    // Verificar se arquivo está completo/válido
+    const stats = fs.statSync(tempPath);
+    
+    // Se arquivo tem menos de 1KB, provavelmente está corrompido
+    if (stats.size < 1024) {
+      logger.warn('orchestrator', `⚠️  Arquivo muito pequeno (${stats.size} bytes) - re-baixando: ${fileName}`);
+      fs.unlinkSync(tempPath);
+      await downloadFile(fileUrl, tempPath);
+    } else {
+      logger.info('orchestrator', `♻️  Reutilizando arquivo existente: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+    }
   } else {
-    logger.info('orchestrator', `♻️  Reutilizando arquivo existente: ${fileName}`);
+    await downloadFile(fileUrl, tempPath);
   }
 
   // 2. Processar e carregar (com checkpoint)
@@ -402,6 +414,16 @@ export async function runETL(options = {}) {
         await control.markFileAsError(fileId, error.message);
         
         currentFileId = null; // Limpar após erro
+        
+        // Se arquivo ZIP está corrompido, deletar para forçar re-download na próxima execução
+        if (error.message.includes('zip') || error.message.includes('truncated') || error.message.includes('signature not found')) {
+          const fs = await import('fs');
+          const tempPath = getTempFilePath(fileRecord.file_name);
+          if (fs.existsSync(tempPath)) {
+            fs.unlinkSync(tempPath);
+            logger.warn('orchestrator', `⚠️  Arquivo corrompido removido: ${fileRecord.file_name}`);
+          }
+        }
         
         // ⚠️ Continuar com próximo arquivo (não abortar ETL inteiro)
       }
