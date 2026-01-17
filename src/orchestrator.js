@@ -355,8 +355,8 @@ export async function runETL(options = {}) {
     // 7. Buscar arquivos pendentes APENAS do run atual
     const pendingFiles = await control.getPendingFiles(runId);
     logger.info('orchestrator', `${pendingFiles.length} arquivos pendentes para este run`);
-8. Processar cada arquivo (já vem ordenado do getPendingFiles)
-    // 7. Processar cada arquivo
+
+    // 8. Processar cada arquivo (já vem ordenado do getPendingFiles)
     let completed = 0;
     let failed = 0;
 
