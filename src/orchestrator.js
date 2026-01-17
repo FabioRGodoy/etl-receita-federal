@@ -26,6 +26,7 @@ const TABLES = {
   [CONFIG.FILE_TYPES.MUNICIPIOS]: {
     name: 'municipios',
     columns: ['codigo_municipio', 'nome_municipio'],
+    conflictColumns: ['codigo_municipio'],
   },
   [CONFIG.FILE_TYPES.ESTABELECIMENTOS]: {
     name: 'estabelecimentos',
@@ -38,6 +39,7 @@ const TABLES = {
       'codigo_municipio', 'ddd1', 'telefone1', 'ddd2', 'telefone2', 'ddd_fax', 'fax',
       'correio_eletronico', 'situacao_especial', 'data_situacao_especial',
     ],
+    conflictColumns: ['cnpj_basico', 'cnpj_ordem', 'cnpj_dv'],
   },
   [CONFIG.FILE_TYPES.SOCIOS]: {
     name: 'socios',
@@ -47,6 +49,7 @@ const TABLES = {
       'cpf_representante_legal', 'nome_representante_legal',
       'qualificacao_representante_legal', 'faixa_etaria',
     ],
+    conflictColumns: ['cnpj_basico', 'identificador_socio', 'cpf_cnpj_socio'],
   },
 };
 
@@ -90,10 +93,12 @@ async function loadDataBatch(fileType, records, mode = 'insert') {
       if (mode === 'upsert') {
         const updateColumns = table.columns.filter(col => !['id', 'created_at'].includes(col));
         const updateSet = updateColumns.map(col => `${col} = EXCLUDED.${col}`).join(', ');
-        query += ` ON CONFLICT (${table.columns[0]}) DO UPDATE SET ${updateSet}, updated_at = NOW()`;
+        const conflictCols = table.conflictColumns || [table.columns[0]];
+        query += ` ON CONFLICT (${conflictCols.join(', ')}) DO UPDATE SET ${updateSet}, updated_at = NOW()`;
       } else {
         // INSERT com ignore de duplicatas
-        query += ` ON CONFLICT (${table.columns[0]}) DO NOTHING`;
+        const conflictCols = table.conflictColumns || [table.columns[0]];
+        query += ` ON CONFLICT (${conflictCols.join(', ')}) DO NOTHING`;
       }
 
       const result = await client.query(query, values);

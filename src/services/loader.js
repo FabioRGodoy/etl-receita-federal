@@ -10,7 +10,7 @@ import { CONFIG } from '../config/constants.js';
 /**
  * Monta query de INSERT em batch
  */
-function buildBatchInsertQuery(tableName, columns, records, mode = 'insert') {
+function buildBatchInsertQuery(tableName, columns, records, mode = 'insert', conflictColumns = null) {
   const placeholders = [];
   const values = [];
   let paramIndex = 1;
@@ -31,8 +31,9 @@ function buildBatchInsertQuery(tableName, columns, records, mode = 'insert') {
     const updateColumns = columns.filter(col => !['id', 'created_at'].includes(col));
     const updateSet = updateColumns.map(col => `${col} = EXCLUDED.${col}`).join(', ');
     
-    // Assumir que a primeira coluna é a chave única
-    query += ` ON CONFLICT (${columns[0]}) DO UPDATE SET ${updateSet}, updated_at = NOW()`;
+    // Usar conflictColumns se fornecido, caso contrário usar primeira coluna
+    const conflictCols = conflictColumns || [columns[0]];
+    query += ` ON CONFLICT (${conflictCols.join(', ')}) DO UPDATE SET ${updateSet}, updated_at = NOW()`;
   }
 
   return { query, values };
@@ -41,7 +42,7 @@ function buildBatchInsertQuery(tableName, columns, records, mode = 'insert') {
 /**
  * Carrega registros em batch
  */
-export async function loadBatch(tableName, columns, records, mode = 'insert') {
+export async function loadBatch(tableName, columns, records, mode = 'insert', conflictColumns = null) {
   if (records.length === 0) {
     return { inserted: 0, updated: 0 };
   }
@@ -49,7 +50,7 @@ export async function loadBatch(tableName, columns, records, mode = 'insert') {
   const client = await pool.connect();
   
   try {
-    const { query, values } = buildBatchInsertQuery(tableName, columns, records, mode);
+    const { query, values } = buildBatchInsertQuery(tableName, columns, records, mode, conflictColumns);
     
     const result = await client.query(query, values);
     
