@@ -272,6 +272,7 @@ export async function runETL(options = {}) {
     year = null,
     month = null,
     fileTypes = null,
+    force = false, // Nova opção: forçar execução mesmo com run recente
   } = options;
 
   logger.info('orchestrator', `Iniciando ETL - Tipo: ${loadType}`, {
@@ -279,6 +280,7 @@ export async function runETL(options = {}) {
     year,
     month,
     fileTypes,
+    force,
   });
 
   // 1. Testar conexão
@@ -288,11 +290,54 @@ export async function runETL(options = {}) {
   }
   logger.info('orchestrator', 'Conexão com banco OK');
 
-  // 2. Criar run
+  // 2. Verificar se já existe FULL LOAD recente (evitar loop infinito)
+  if (loadType === CONFIG.LOAD_TYPE.FULL && !force) {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT id, status, completed_at, files_completed, files_failed
+        FROM etl_control_runs
+        WHERE load_type = 'FULL'
+          AND status = 'completed'
+          AND completed_at > NOW() - INTERVAL '2 hours'
+        ORDER BY completed_at DESC
+        LIMIT 1
+      `);
+
+      if (result.rows.length > 0) {
+        const recentRun = result.rows[0];
+        const completedAt = new Date(recentRun.completed_at);
+        const minutesAgo = Math.round((Date.now() - completedAt.getTime()) / 1000 / 60);
+        
+        logger.warn(
+          'orchestrator',
+          `⚠️  FULL LOAD já foi concluído há ${minutesAgo} minutos (Run ID: ${recentRun.id})`
+        );
+        logger.warn(
+          'orchestrator',
+          `   Arquivos: ${recentRun.files_completed} concluídos, ${recentRun.files_failed} falhas`
+        );
+        logger.warn('orchestrator', '');
+        logger.warn('orchestrator', '🛑 Abortando para evitar TRUNCATE acidental dos dados!');
+        logger.warn('orchestrator', '');
+        logger.warn('orchestrator', 'Para executar novamente:');
+        logger.warn('orchestrator', '  1. Execute: node limpar-controle.js');
+        logger.warn('orchestrator', '  2. Execute: npm run full-load -- --yes');
+        logger.warn('orchestrator', '');
+        logger.warn('orchestrator', 'Ou use --force para ignorar esta proteção (cuidado!)');
+        
+        throw new Error('FULL LOAD recente detectado - operação cancelada por segurança');
+      }
+    } finally {
+      client.release();
+    }
+  }
+
+  // 3. Criar run
   const runId = await control.createRun(loadType);
 
   try {
-    // 3. Limpar arquivos de controle pendentes antigos se FULL LOAD
+    // 4. Limpar arquivos de controle pendentes antigos se FULL LOAD
     if (loadType === CONFIG.LOAD_TYPE.FULL) {
       await truncateTables();
       
@@ -309,7 +354,7 @@ export async function runETL(options = {}) {
       }
     }
 
-    // 4. Descobrir arquivos
+    // 5. Descobrir arquivos
     let files;
     if (filesToProcess) {
       files = filesToProcess;
@@ -340,7 +385,7 @@ export async function runETL(options = {}) {
     await control.updateRun(runId, { total_files: files.length });
     logger.info('orchestrator', `${files.length} arquivos para processar`);
 
-    // 5. Ordenar arquivos: municipios -> estabelecimentos -> socios
+    // 6. Ordenar arquivos: municipios -> estabelecimentos -> socios
     // Isso garante que as FKs sejam respeitadas
     const sortedFiles = files.sort((a, b) => {
       const order = {
@@ -351,7 +396,7 @@ export async function runETL(options = {}) {
       return (order[a.fileType] || 999) - (order[b.fileType] || 999);
     });
     
-    // 6. Registrar arquivos no controle (já ordenados)
+    // 7. Registrar arquivos no controle (já ordenados)
     for (const file of sortedFiles) {
       await control.registerFile({
         fileName: file.fileName,
@@ -364,11 +409,11 @@ export async function runETL(options = {}) {
       });
     }
 
-    // 7. Buscar arquivos pendentes APENAS do run atual
+    // 8. Buscar arquivos pendentes APENAS do run atual
     const pendingFiles = await control.getPendingFiles(runId);
     logger.info('orchestrator', `${pendingFiles.length} arquivos pendentes para este run`);
 
-    // 8. Processar cada arquivo (já vem ordenado do getPendingFiles)
+    // 9. Processar cada arquivo (já vem ordenado do getPendingFiles)
     let completed = 0;
     let failed = 0;
 
@@ -429,7 +474,7 @@ export async function runETL(options = {}) {
       }
     }
     
-    // Verificar se foi interrompido
+    // 9. Verificar se foi interrompido
     if (isShuttingDown) {
       logger.warn('orchestrator', '⚠️  ETL interrompido por shutdown - pode ser retomado');
       
@@ -448,7 +493,7 @@ export async function runETL(options = {}) {
       };
     }
 
-    // 8. Finalizar run
+    // 10. Finalizar run
     await control.finalizeRun(runId, 'completed');
     await control.updateRun(runId, {
       files_completed: completed,

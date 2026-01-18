@@ -42,4 +42,26 @@ if [[ $# -gt 0 ]]; then
 fi
 
 echo "[entrypoint] mode=$MODE baseUrl=${BASE_URL:-<default>} tempDir=$TEMP_DIR logDir=$LOG_DIR" >&2
-exec "${cmd[@]}"
+
+# Executar comando
+"${cmd[@]}"
+
+EXIT_CODE=$?
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+  echo "" >&2
+  echo "[entrypoint] ✅ ETL concluído com sucesso!" >&2
+  echo "[entrypoint] Dados preservados no banco." >&2
+  echo "[entrypoint] Container permanecerá ativo para consultas." >&2
+  echo "" >&2
+  echo "[entrypoint] Para executar novamente:" >&2
+  echo "[entrypoint]   1. Execute: node limpar-controle.js" >&2
+  echo "[entrypoint]   2. Execute: npm run full-load -- --yes" >&2
+  echo "" >&2
+  
+  # Manter container vivo (não reiniciar automaticamente)
+  tail -f /dev/null
+else
+  echo "[entrypoint] ❌ ETL falhou com código: $EXIT_CODE" >&2
+  exit $EXIT_CODE
+fi
