@@ -297,7 +297,7 @@ export async function runETL(options = {}) {
       const result = await client.query(`
         SELECT id, status, completed_at, files_completed, files_failed
         FROM etl_control_runs
-        WHERE load_type = 'FULL'
+        WHERE run_type = 'FULL'
           AND status = 'completed'
           AND completed_at > NOW() - INTERVAL '2 hours'
         ORDER BY completed_at DESC
