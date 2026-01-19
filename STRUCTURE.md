@@ -153,7 +153,7 @@ npm run limpar-controle
 ./scripts/backup-db.sh
 
 # Ou manual
-pg_dump -h host -p 5430 -U postgres -d postgres > backup.sql
+pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > backup.sql
 ```
 
 ### Troubleshooting

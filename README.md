@@ -61,11 +61,11 @@ npm run full-load -- --yes
 #    - Porta: 3000 (opcional, para health check)
 
 # 2. Configure Environment Variables:
-DB_HOST=seu-host-postgres
-DB_PORT=5430
-DB_NAME=postgres
+DB_HOST=seu-host-postgres      # Use IP privado ou domínio interno
+DB_PORT=5432                   # Porta padrão ou customizada
+DB_NAME=etl_receita_federal
 DB_USER=postgres
-DB_PASSWORD=sua_senha_segura
+DB_PASSWORD=sua_senha_segura   # Use secrets do Coolify
 MODE=manual  # IMPORTANTE: não executar automaticamente
 
 # 3. Configure Persistent Storage:
@@ -103,11 +103,11 @@ Crie um arquivo `.env` na raiz do projeto:
 # ==============================================
 # Database Configuration
 # ==============================================
-DB_HOST=145.223.94.201        # Host do PostgreSQL
-DB_PORT=5430                   # Porta do PostgreSQL
-DB_NAME=postgres               # Nome do banco
+DB_HOST=localhost              # Host do PostgreSQL (ex: localhost ou IP da VPS)
+DB_PORT=5432                   # Porta do PostgreSQL (padrão: 5432)
+DB_NAME=etl_receita_federal    # Nome do banco
 DB_USER=postgres               # Usuário
-DB_PASSWORD=sua_senha_aqui     # Senha (NUNCA commitar!)
+DB_PASSWORD=sua_senha_segura   # Senha forte (NUNCA commitar!)
 
 # ==============================================
 # ETL Configuration
@@ -933,8 +933,8 @@ psql -d postgres -c "
 ### 🔌 Erro de conexão ao banco
 
 ```bash
-# Verificar se PostgreSQL está acessível
-psql -h 145.223.94.201 -p 5430 -U postgres -d postgres
+# Verificar se PostgreSQL está acessível (use valores do seu .env)
+psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
 
 # Testar conexão via Node.js
 node test-conexao.js
@@ -974,11 +974,11 @@ psql -d postgres -f sql/migrate-add-checkpoint.sql
 
 ```env
 MODE=manual
-DB_HOST=seu-host-postgres
-DB_PORT=5430
-DB_NAME=postgres
+DB_HOST=seu-host-postgres      # IP privado ou domínio interno
+DB_PORT=5432                   # Porta padrão (ajustar se necessário)
+DB_NAME=etl_receita_federal
 DB_USER=postgres
-DB_PASSWORD=sua-senha-segura
+DB_PASSWORD=${DB_PASSWORD}     # Use secrets do Coolify
 BASE_URL=https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/
 TEMP_DIR=/data/temp
 LOG_DIR=/data/logs
@@ -1026,7 +1026,7 @@ node limpar-temp.js
 tail -f /data/logs/etl-$(date +%Y-%m-%d).log
 
 # Backup do banco (executar fora do container)
-pg_dump -h host -p 5430 -U postgres -d postgres > backup-$(date +%Y%m%d).sql
+pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > backup-$(date +%Y%m%d).sql
 ```
 
 ### Proteções Implementadas
@@ -1058,8 +1058,8 @@ pg_dump -h host -p 5430 -U postgres -d postgres > backup-$(date +%Y%m%d).sql
 DATABASE_URL=postgres://user:pass@host:port/db
 
 # ✅ Ou variáveis separadas
-DB_HOST=145.223.94.201
-DB_PORT=5430
+DB_HOST=seu-host-postgres      # Ex: localhost, IP privado ou domínio
+DB_PORT=5432                   # Porta padrão (ajustar se necessário)
 DB_USER=postgres
 DB_PASSWORD=${POSTGRES_PASSWORD}  # Injetado via secrets
 ```

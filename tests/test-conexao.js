@@ -12,9 +12,9 @@ async function main() {
   console.log('='.repeat(60) + '\n');
 
   console.log('📋 Configurações:');
-  console.log(`   Host: ${process.env.DB_HOST || '145.223.94.201'}`);
-  console.log(`   Porta: ${process.env.DB_PORT || '5431'}`);
-  console.log(`   Banco: ${process.env.DB_NAME || 'postgres'}`);
+  console.log(`   Host: ${process.env.DB_HOST || 'localhost'}`);
+  console.log(`   Porta: ${process.env.DB_PORT || '5432'}`);
+  console.log(`   Banco: ${process.env.DB_NAME || 'etl_receita_federal'}`);
   console.log(`   Usuário: ${process.env.DB_USER || 'postgres'}`);
   console.log();
 
@@ -72,9 +72,9 @@ async function main() {
       
       if (!hasETLDb) {
         console.log('📝 Próximos passos:');
-        console.log('   1. Criar banco: createdb -h 145.223.94.201 -p 5431 -U postgres etl_receita_federal');
+        console.log('   1. Criar banco: createdb -h $DB_HOST -p $DB_PORT -U $DB_USER etl_receita_federal');
         console.log('   2. Atualizar DB_NAME no .env para "etl_receita_federal"');
-        console.log('   3. Criar schema: psql -h 145.223.94.201 -p 5431 -U postgres -d etl_receita_federal -f sql/schema.sql');
+        console.log('   3. Criar schema: psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d etl_receita_federal -f sql/schema.sql');
         console.log('   4. Rodar teste: node test-municipios-simples.js');
         console.log();
       } else {
