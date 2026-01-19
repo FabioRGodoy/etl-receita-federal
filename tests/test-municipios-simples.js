@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { downloadFile, getTempFilePath, cleanupFile } from './src/services/downloader.js';
-import { processZipFile } from './src/services/processor.js';
-import { transformMunicipio } from './src/transformers/municipio.js';
-import { pool, testConnection } from './src/config/database.js';
-import logger from './src/config/logger.js';
+import { downloadFile, getTempFilePath, cleanupFile } from '../src/services/downloader.js';
+import { processZipFile } from '../src/services/processor.js';
+import { transformMunicipio } from '../src/transformers/municipio.js';
+import { pool, testConnection } from '../src/config/database.js';
+import logger from '../src/config/logger.js';
 import fs from 'fs';
 
 /**

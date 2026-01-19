@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 
-import { downloadFile, getTempFilePath, cleanupFile } from './src/services/downloader.js';
-import { processZipFile } from './src/services/processor.js';
-import { transformEstabelecimento } from './src/transformers/estabelecimento.js';
-import { pool, testConnection } from './src/config/database.js';
-import logger from './src/config/logger.js';
+import { downloadFile, getTempFilePath, cleanupFile } from '../src/services/downloader.js';
+import { processZipFile } from '../src/services/processor.js';
+import { transformSocio } from '../src/transformers/socio.js';
+import { pool, testConnection } from '../src/config/database.js';
+import logger from '../src/config/logger.js';
 import fs from 'fs';
 
 /**
- * Teste SIMPLES - Apenas 1 arquivo de Estabelecimentos
- * Para validar que o fluxo otimizado funciona com arquivo maior
- * 
- * Estabelecimentos tem 31 colunas (vs 11 de sócios)
- * Arquivos são maiores (~100-300MB compactados)
+ * Teste SIMPLES - Apenas 1 arquivo de Sócios
+ * Para validar que o fluxo básico funciona com arquivo completo
  */
 
 /**
@@ -21,9 +18,8 @@ import fs from 'fs';
  * - Transação por batch (commit imediato)
  * - Limpeza agressiva de arrays após uso
  * - Batch size controlado em 500 registros
- * - 31 colunas × 500 registros = 15.500 valores por batch (aceitável)
  */
-async function loadEstabelecimentosData(client, records) {
+async function loadSociosData(client, records) {
   if (records.length === 0) return 0;
   
   // ⚠️ IMPORTANTE: Criar arrays locais que serão destruídos após o INSERT
@@ -38,65 +34,33 @@ async function loadEstabelecimentosData(client, records) {
     let paramIndex = 1;
     
     for (const record of records) {
-      // 31 colunas = $1 até $31 por registro
-      const params = [];
-      for (let i = 0; i < 31; i++) {
-        params.push(`$${paramIndex + i}`);
-      }
-      placeholders.push(`(${params.join(', ')})`);
-      
-      // Adicionar valores na ordem correta (31 colunas)
+      placeholders.push(
+        `($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6}, $${paramIndex+7}, $${paramIndex+8}, $${paramIndex+9}, $${paramIndex+10})`
+      );
       values.push(
         record.cnpj_basico,
-        record.cnpj_ordem,
-        record.cnpj_dv,
-        record.cnpj,
-        record.identificador_matriz_filial,
-        record.nome_fantasia,
-        record.situacao_cadastral,
-        record.data_situacao_cadastral,
-        record.motivo_situacao_cadastral,
-        record.nome_cidade_exterior,
+        record.identificador_socio,
+        record.nome_socio,
+        record.cpf_cnpj_socio,
+        record.qualificacao_socio,
+        record.data_entrada_sociedade,
         record.codigo_pais,
-        record.data_inicio_atividade,
-        record.cnae_fiscal_principal,
-        record.cnae_fiscal_secundaria,
-        record.tipo_logradouro,
-        record.logradouro,
-        record.numero,
-        record.complemento,
-        record.bairro,
-        record.cep,
-        record.uf,
-        record.codigo_municipio,
-        record.ddd1,
-        record.telefone1,
-        record.ddd2,
-        record.telefone2,
-        record.ddd_fax,
-        record.fax,
-        record.correio_eletronico,
-        record.situacao_especial,
-        record.data_situacao_especial
+        record.cpf_representante_legal,
+        record.nome_representante_legal,
+        record.qualificacao_representante_legal,
+        record.faixa_etaria
       );
-      paramIndex += 31;
+      paramIndex += 11;
     }
     
     // ⚠️ Construir query (será destruída após o INSERT)
-    // ⚠️ ON CONFLICT permite retomar processamento após interrupção
     const query = `
-      INSERT INTO estabelecimentos (
-        cnpj_basico, cnpj_ordem, cnpj_dv, cnpj,
-        identificador_matriz_filial, nome_fantasia, situacao_cadastral,
-        data_situacao_cadastral, motivo_situacao_cadastral,
-        nome_cidade_exterior, codigo_pais, data_inicio_atividade,
-        cnae_fiscal_principal, cnae_fiscal_secundaria,
-        tipo_logradouro, logradouro, numero, complemento, bairro,
-        cep, uf, codigo_municipio,
-        ddd1, telefone1, ddd2, telefone2, ddd_fax, fax,
-        correio_eletronico, situacao_especial, data_situacao_especial
+      INSERT INTO socios (
+        cnpj_basico, identificador_socio, nome_socio, cpf_cnpj_socio,
+        qualificacao_socio, data_entrada_sociedade, codigo_pais,
+        cpf_representante_legal, nome_representante_legal, 
+        qualificacao_representante_legal, faixa_etaria
       ) VALUES ${placeholders.join(', ')}
-      ON CONFLICT (cnpj) DO NOTHING
     `;
     
     // Executar INSERT
@@ -131,7 +95,7 @@ async function loadEstabelecimentosData(client, records) {
       values = null;
     }
     
-    logger.error('test', `Erro ao inserir batch de estabelecimentos: ${error.message}`);
+    logger.error('test', `Erro ao inserir batch de sócios: ${error.message}`);
     return 0;
   }
 }
@@ -143,19 +107,18 @@ let ultimoLog = Date.now();
 
 async function main() {
   console.log('\n' + '='.repeat(70));
-  console.log('🧪 TESTE SIMPLES - 1 Arquivo de Estabelecimentos');
+  console.log('🧪 TESTE SIMPLES - 1 Arquivo de Sócios');
   console.log('='.repeat(70) + '\n');
 
-  // Arquivo mais recente (2025-12) - Estabelecimentos0.zip é o primeiro
+  // Arquivo mais recente (2025-12) - Socios0.zip é o primeiro
   const arquivo = {
-    nome: 'Estabelecimentos0.zip',
-    url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-12/Estabelecimentos0.zip'
+    nome: 'Socios0.zip',
+    url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-12/Socios0.zip'
   };
   
   console.log(`📦 Arquivo: ${arquivo.nome}`);
   console.log(`🔗 URL: ${arquivo.url}`);
-  console.log(`⚠️  Arquivo GRANDE (~100-300MB compactado, milhões de linhas)`);
-  console.log(`⚠️  31 colunas por registro (vs 11 de sócios)`);
+  console.log(`⚠️  Arquivo maior que Municípios (~47MB compactado)`);
   console.log();
 
   try {
@@ -168,13 +131,13 @@ async function main() {
     console.log(`   ✅ Conectado ao banco (${dbTest.timestamp})\n`);
 
     // 2. Verificar se tabela existe
-    console.log('2️⃣  Verificando tabela estabelecimentos...');
+    console.log('2️⃣  Verificando tabela socios...');
     const client = await pool.connect();
     try {
-      await client.query('SELECT 1 FROM estabelecimentos LIMIT 1');
-      console.log('   ✅ Tabela estabelecimentos existe\n');
+      await client.query('SELECT 1 FROM socios LIMIT 1');
+      console.log('   ✅ Tabela socios existe\n');
     } catch (error) {
-      throw new Error(`❌ Tabela estabelecimentos não existe. Execute: psql -d etl_receita_federal -f sql/schema.sql`);
+      throw new Error(`❌ Tabela socios não existe. Execute: psql -d etl_receita_federal -f sql/schema.sql`);
     } finally {
       client.release();
     }
@@ -196,7 +159,7 @@ async function main() {
 
     // 4. Processar arquivo
     console.log('4️⃣  Processando arquivo ZIP...');
-    console.log('   (Isso pode levar 30-60 minutos para arquivo completo...)\n');
+    console.log('   (Isso pode levar 15-30 minutos para arquivo completo...)\n');
     totalCarregados = 0;
     totalProcessado = 0;
     ultimoLog = Date.now();
@@ -209,16 +172,16 @@ async function main() {
     
     try {
       // ⚠️ BATCH_SIZE OTIMIZADO: 500 registros
-      // - Com 31 colunas = 15.500 valores por batch
-      // - Maior que sócios (11 colunas = 5.500 valores)
-      // - Mas ainda gerenciável e eficiente
+      // - Não muito pequeno (seria lento demais com muitas queries)
+      // - Não muito grande (evita queries SQL gigantes e OOM)
+      // - Com 11 colunas = 5.500 valores por batch (aceitável)
       const BATCH_SIZE = 500;
       
       resultado = await processZipFile(
         tempPath,
-        transformEstabelecimento,
+        transformSocio,
         async (records) => {
-          const carregados = await loadEstabelecimentosData(loadClient, records);
+          const carregados = await loadSociosData(loadClient, records);
           totalCarregados += carregados;
           totalProcessado += records.length;
           
@@ -232,7 +195,7 @@ async function main() {
             ultimoLog = agora;
           }
         },
-        BATCH_SIZE // ⚠️ Backpressure controlado + batch otimizado
+        BATCH_SIZE // ⚠️ Agora processZipFile aceita este parâmetro!
       );
       
       console.log(`   📊 Final: ${totalProcessado.toLocaleString('pt-BR')} registros processados`);
@@ -250,22 +213,21 @@ async function main() {
     console.log('6️⃣  Verificando dados carregados...');
     const clientVerify = await pool.connect();
     try {
-      const countResult = await clientVerify.query('SELECT COUNT(*) FROM estabelecimentos');
+      const countResult = await clientVerify.query('SELECT COUNT(*) FROM socios');
       const total = parseInt(countResult.rows[0].count);
-      console.log(`   📊 Total de estabelecimentos no banco: ${total.toLocaleString('pt-BR')}`);
+      console.log(`   📊 Total de sócios no banco: ${total}`);
       
       // Mostrar amostra
       const sampleResult = await clientVerify.query(`
-        SELECT cnpj, nome_fantasia, uf, situacao_cadastral
-        FROM estabelecimentos 
-        ORDER BY cnpj 
+        SELECT cnpj_basico, nome_socio, cpf_cnpj_socio 
+        FROM socios 
+        ORDER BY cnpj_basico 
         LIMIT 5
       `);
       console.log('\n   📋 Amostra (primeiros 5):');
-      sampleResult.rows.forEach(e => {
-        const nomeFantasia = e.nome_fantasia || '(sem nome fantasia)';
-        const situacao = e.situacao_cadastral === 2 ? 'ATIVA' : 'BAIXADA';
-        console.log(`      CNPJ: ${e.cnpj} | ${nomeFantasia} | ${e.uf} | ${situacao}`);
+      sampleResult.rows.forEach(s => {
+        const cpfCnpj = s.cpf_cnpj_socio || 'N/A';
+        console.log(`      CNPJ: ${s.cnpj_basico} | Sócio: ${s.nome_socio} | CPF/CNPJ: ${cpfCnpj}`);
       });
       
       // Estatísticas adicionais
@@ -273,18 +235,14 @@ async function main() {
         SELECT 
           COUNT(*) as total,
           COUNT(DISTINCT cnpj_basico) as empresas_distintas,
-          COUNT(CASE WHEN situacao_cadastral = 2 THEN 1 END) as ativos,
-          COUNT(CASE WHEN identificador_matriz_filial = 1 THEN 1 END) as matrizes,
-          COUNT(CASE WHEN identificador_matriz_filial = 2 THEN 1 END) as filiais
-        FROM estabelecimentos
+          COUNT(CASE WHEN cpf_cnpj_socio IS NOT NULL THEN 1 END) as com_cpf_cnpj
+        FROM socios
       `);
       console.log('\n   📈 Estatísticas:');
       const stats = statsResult.rows[0];
-      console.log(`      • Total de estabelecimentos: ${parseInt(stats.total).toLocaleString('pt-BR')}`);
-      console.log(`      • Empresas distintas: ${parseInt(stats.empresas_distintas).toLocaleString('pt-BR')}`);
-      console.log(`      • Estabelecimentos ativos: ${parseInt(stats.ativos).toLocaleString('pt-BR')}`);
-      console.log(`      • Matrizes: ${parseInt(stats.matrizes).toLocaleString('pt-BR')}`);
-      console.log(`      • Filiais: ${parseInt(stats.filiais).toLocaleString('pt-BR')}`);
+      console.log(`      • Total de sócios: ${stats.total}`);
+      console.log(`      • Empresas distintas: ${stats.empresas_distintas}`);
+      console.log(`      • Sócios com CPF/CNPJ: ${stats.com_cpf_cnpj}`);
     } finally {
       clientVerify.release();
     }
@@ -294,10 +252,10 @@ async function main() {
     console.log('✅ TESTE CONCLUÍDO COM SUCESSO!');
     console.log('='.repeat(70));
     console.log('\n📊 Estatísticas do processamento:');
-    console.log(`   • Registros parseados: ${resultado.totalRecords.toLocaleString('pt-BR')}`);
-    console.log(`   • Registros carregados: ${totalCarregados.toLocaleString('pt-BR')}`);
+    console.log(`   • Registros parseados: ${resultado.totalRecords}`);
+    console.log(`   • Registros carregados: ${totalCarregados}`);
     console.log(`   • Erros de parsing: ${resultado.errors}`);
-    console.log('\n💡 Sistema pronto para FULL LOAD completo!');
+    console.log('\n💡 Próximo passo: Teste com arquivo de Estabelecimentos (maior)');
     console.log();
 
     process.exit(0);

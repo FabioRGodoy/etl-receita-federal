@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { testConnection, pool } from './src/config/database.js';
+import { testConnection, pool } from '../src/config/database.js';
 
 /**
  * Teste rápido de conexão com o banco

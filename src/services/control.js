@@ -74,12 +74,13 @@ export async function registerFile(fileInfo) {
   try {
     const result = await client.query(
       `INSERT INTO etl_control_files 
-       (file_name, file_url, file_type, file_year, file_month, load_type, run_id, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (file_name, file_url, file_type, file_year, file_month, load_type, run_id, status, last_modified_date) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (file_name) DO UPDATE SET
          file_url = EXCLUDED.file_url,
          run_id = EXCLUDED.run_id,
          status = EXCLUDED.status,
+         last_modified_date = EXCLUDED.last_modified_date,
          updated_at = NOW()
        RETURNING id`,
       [
@@ -91,6 +92,7 @@ export async function registerFile(fileInfo) {
         fileInfo.loadType,
         fileInfo.runId,
         CONFIG.STATUS.PENDING,
+        fileInfo.lastModified || null, // 🆕 Data de modificação
       ]
     );
     
@@ -197,7 +199,7 @@ export async function getPendingFiles(runId = null) {
 }
 
 /**
- * Busca arquivos já processados para DELTA
+ * Busca arquivos já processados para DELTA (OBSOLETO - usar getFilesToReprocess)
  */
 export async function getProcessedFiles(fileType = null) {
   const client = await pool.connect();
@@ -219,6 +221,74 @@ export async function getProcessedFiles(fileType = null) {
     
     const result = await client.query(query, params);
     return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Identifica arquivos que precisam ser reprocessados (DELTA)
+ * Compara data de modificação no site vs banco de dados
+ * 
+ * @param {Array} discoveredFiles - Arquivos descobertos no site (com lastModified)
+ * @returns {Array} - Arquivos que precisam ser reprocessados com motivo
+ */
+export async function getFilesToReprocess(discoveredFiles) {
+  const client = await pool.connect();
+  
+  try {
+    const filesToProcess = [];
+    
+    for (const file of discoveredFiles) {
+      // Buscar data de modificação no banco
+      const result = await client.query(
+        `SELECT last_modified_date, status
+         FROM etl_control_files
+         WHERE file_name = $1`,
+        [file.fileName]
+      );
+      
+      let reason = null;
+      let shouldProcess = false;
+      
+      if (result.rows.length === 0) {
+        // Arquivo nunca foi processado
+        reason = 'Novo arquivo (nunca processado)';
+        shouldProcess = true;
+      } else {
+        const dbDate = result.rows[0].last_modified_date;
+        const fileStatus = result.rows[0].status;
+        
+        if (!dbDate) {
+          // Arquivo já existe mas sem data (migração)
+          reason = 'Sem data registrada (pós-migração)';
+          shouldProcess = true;
+        } else if (!file.lastModified) {
+          // Arquivo no site sem data (erro no scraping)
+          reason = 'Arquivo no site sem data (por segurança)';
+          shouldProcess = true;
+        } else {
+          // Comparar datas
+          const siteDate = new Date(file.lastModified);
+          const dbDateObj = new Date(dbDate);
+          
+          if (siteDate > dbDateObj) {
+            const diff = Math.round((siteDate - dbDateObj) / 1000 / 60); // minutos
+            reason = `Arquivo atualizado (${diff} min mais recente)`;
+            shouldProcess = true;
+          }
+        }
+      }
+      
+      if (shouldProcess) {
+        filesToProcess.push({
+          ...file,
+          reprocessReason: reason,
+        });
+      }
+    }
+    
+    return filesToProcess;
   } finally {
     client.release();
   }
@@ -276,7 +346,8 @@ export default {
   markFileAsDone,
   markFileAsError,
   getPendingFiles,
-  getProcessedFiles,
+  getProcessedFiles, // Mantido por compatibilidade (obsoleto)
+  getFilesToReprocess, // 🆕 Nova função para DELTA
   updateFileCheckpoint,
   getFileCheckpoint,
 };

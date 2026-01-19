@@ -1,4 +1,4 @@
-import { pool } from './src/config/database.js';
+import { pool } from '../src/config/database.js';
 
 /**
  * Script para verificar o estado do ETL e checkpoints

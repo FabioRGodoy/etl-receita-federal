@@ -8,10 +8,17 @@
     "discovery": "node src/cli/discovery-test.js",
     "full-load": "node src/cli/full-load.js",
     "delta": "node src/cli/delta.js",
+    "popular-datas": "node utils/popular-datas.js",
     "test": "node src/cli/discovery-test.js",
-    "limpar-controle": "node limpar-controle.js",
-    "limpar-temp": "node limpar-temp.js",
-    "status": "node verificar-estado.js"
+    "limpar-controle": "node utils/limpar-controle.js",
+    "limpar-temp": "node utils/limpar-temp.js",
+    "status": "node utils/verificar-estado.js",
+    "test:conexao": "node tests/test-conexao.js",
+    "test:discovery": "node tests/test-discovery.js",
+    "test:municipios": "node tests/test-municipios-simples.js",
+    "test:estabelecimentos": "node tests/test-estabelecimentos-simples.js",
+    "test:socios": "node tests/test-socios-simples.js",
+    "migrate": "node sql/migrations/run-migration.js"
   },
   "keywords": [
     "etl",

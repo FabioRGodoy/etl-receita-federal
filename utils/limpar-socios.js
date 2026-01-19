@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { pool } from './src/config/database.js';
+import { pool } from '../src/config/database.js';
 
 async function limpar() {
   const client = await pool.connect();

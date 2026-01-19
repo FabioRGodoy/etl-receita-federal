@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { downloadFile, getTempFilePath, cleanupFile } from './src/services/downloader.js';
-import { processZipFile } from './src/services/processor.js';
-import { transformMunicipio } from './src/transformers/municipio.js';
-import { truncateTable } from './src/services/loader.js';
-import { pool, testConnection } from './src/config/database.js';
-import logger from './src/config/logger.js';
+import { downloadFile, getTempFilePath, cleanupFile } from '../src/services/downloader.js';
+import { processZipFile } from '../src/services/processor.js';
+import { transformMunicipio } from '../src/transformers/municipio.js';
+import { truncateTable } from '../src/services/loader.js';
+import { pool, testConnection } from '../src/config/database.js';
+import logger from '../src/config/logger.js';
 
 /**
  * Teste rápido com arquivo de Municípios de 2025-12 (mais recente)

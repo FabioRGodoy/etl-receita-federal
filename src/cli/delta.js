@@ -2,31 +2,14 @@
 
 import { runETL } from '../orchestrator.js';
 import { discoverFiles } from '../services/discovery.js';
-import { getProcessedFiles } from '../services/control.js';
+import { getFilesToReprocess } from '../services/control.js';
 import { CONFIG } from '../config/constants.js';
 import logger from '../config/logger.js';
 
 /**
  * CLI para executar DELTA (carga incremental)
- * Processa apenas arquivos novos (ano/mês não processados)
+ * Processa arquivos que foram atualizados no site (compara last_modified_date)
  */
-
-/**
- * Filtra arquivos novos com base em ano/mês
- */
-function filterNewFiles(allFiles, processedFiles) {
-  const processedSet = new Set();
-  
-  processedFiles.forEach(pf => {
-    const key = `${pf.file_type}_${pf.file_year}_${pf.file_month}`;
-    processedSet.add(key);
-  });
-
-  return allFiles.filter(file => {
-    const key = `${file.fileType}_${file.fileYear}_${file.fileMonth}`;
-    return !processedSet.has(key);
-  });
-}
 
 async function main() {
   console.log('='.repeat(80));
@@ -39,40 +22,47 @@ async function main() {
   const baseUrl = args[0] || CONFIG.BASE_URL;
   
   console.log(`URL Base: ${baseUrl}`);
-  console.log(`Tipo: DELTA (apenas arquivos novos, usa UPSERT)`);
+  console.log(`Tipo: DELTA (detecta arquivos atualizados por data de modificação)`);
   console.log();
-  console.log('🔍 Buscando arquivos novos...');
+  console.log('🔍 Buscando arquivos...');
   console.log();
 
   const startTime = Date.now();
 
   try {
-    // 1. Descobrir arquivos do mês/ano mais recente
+    // 1. Descobrir arquivos do mês/ano mais recente (com datas de modificação)
     const allFiles = await discoverFiles(baseUrl, { latestOnly: true });
     console.log(`📦 Total de arquivos disponíveis (mês mais recente): ${allFiles.length}`);
 
-    // 2. Buscar arquivos já processados
-    const processedFiles = await getProcessedFiles();
-    console.log(`✅ Arquivos já processados: ${processedFiles.length}`);
-
-    // 3. Filtrar apenas novos
-    const newFiles = filterNewFiles(allFiles, processedFiles);
-    console.log(`🆕 Arquivos novos a processar: ${newFiles.length}`);
+    // 2. Identificar quais precisam ser reprocessados (compara datas)
+    const filesToProcess = await getFilesToReprocess(allFiles);
+    console.log(`🔄 Arquivos a reprocessar: ${filesToProcess.length}`);
     console.log();
 
-    if (newFiles.length === 0) {
-      console.log('✅ Nenhum arquivo novo encontrado!');
-      console.log('   Todos os arquivos disponíveis já foram processados.');
+    if (filesToProcess.length === 0) {
+      console.log('✅ Nenhum arquivo atualizado encontrado!');
+      console.log('   Todos os arquivos estão sincronizados com o site.');
       console.log();
       process.exit(0);
     }
 
-    // Mostrar resumo
-    console.log('📋 Arquivos novos por tipo:');
+    // Mostrar detalhes dos arquivos
+    console.log('📋 Arquivos a processar:');
+    filesToProcess.forEach(f => {
+      const dateStr = f.lastModified 
+        ? new Date(f.lastModified).toLocaleString('pt-BR')
+        : 'sem data';
+      console.log(`   • ${f.fileName} - ${f.reprocessReason}`);
+      console.log(`     Data no site: ${dateStr}`);
+    });
+    console.log();
+
+    // Resumo por tipo
     const byType = {};
-    newFiles.forEach(f => {
+    filesToProcess.forEach(f => {
       byType[f.fileType] = (byType[f.fileType] || 0) + 1;
     });
+    console.log('📊 Resumo por tipo:');
     Object.entries(byType).forEach(([type, count]) => {
       console.log(`   - ${type}: ${count} arquivos`);
     });
@@ -89,11 +79,11 @@ async function main() {
     console.log('🚀 Iniciando DELTA...');
     console.log();
 
-    // 4. Executar ETL apenas com arquivos novos
+    // 3. Executar ETL apenas com arquivos atualizados
     const result = await runETL({
       baseUrl,
       loadType: CONFIG.LOAD_TYPE.DELTA,
-      filesToProcess: newFiles,
+      filesToProcess: filesToProcess,
     });
 
     const endTime = Date.now();

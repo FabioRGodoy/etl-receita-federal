@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { discoverFiles } from './src/services/discovery.js';
-import { CONFIG } from './src/config/constants.js';
+import { discoverFiles } from '../src/services/discovery.js';
+import { CONFIG } from '../src/config/constants.js';
 
 /**
  * Teste do serviço de descoberta de arquivos

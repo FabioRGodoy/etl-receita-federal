@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { CONFIG } from './src/config/constants.js';
+import { CONFIG } from '../src/config/constants.js';
 
 /**
  * Limpa arquivos temporários corrompidos ou incompletos
