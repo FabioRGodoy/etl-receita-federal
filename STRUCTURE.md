@@ -92,6 +92,7 @@ etl-receita-federal/
 ## 🎯 Comandos NPM Atualizados
 
 ### Comandos Principais
+
 ```bash
 npm run full-load          # Executa FULL LOAD
 npm run delta              # Executa DELTA
@@ -100,6 +101,7 @@ npm run status             # Verifica estado do ETL
 ```
 
 ### Utilitários de Manutenção
+
 ```bash
 npm run limpar-controle    # Limpa checkpoints e runs
 npm run limpar-temp        # Remove arquivos ZIP temporários
@@ -107,6 +109,7 @@ npm run migrate            # Executa migrations
 ```
 
 ### Testes
+
 ```bash
 npm run test:conexao           # Testa conexão com banco
 npm run test:discovery         # Testa discovery de arquivos
@@ -118,6 +121,7 @@ npm run test:socios            # Testa processamento socios
 ## 📝 Fluxo de Execução
 
 ### FULL LOAD
+
 1. **CLI** (`src/cli/full-load.js`) → recebe parâmetros
 2. **Orchestrator** (`src/orchestrator.js`) → coordena fluxo
 3. **Discovery** (`src/services/discovery.js`) → encontra arquivos
@@ -129,6 +133,7 @@ npm run test:socios            # Testa processamento socios
 9. **Loader** (`src/services/loader.js`) → insere no banco
 
 ### Checkpoint e Retomada
+
 - **Control Service** salva checkpoint a cada 30s no banco
 - Se interrompido, próxima execução retoma do checkpoint
 - Checkpoint armazena: arquivo, linha, timestamp
@@ -136,6 +141,7 @@ npm run test:socios            # Testa processamento socios
 ## 🔧 Manutenção
 
 ### Limpeza Periódica
+
 ```bash
 # Limpar logs antigos (> 30 dias)
 find logs/ -name "*.log" -mtime +30 -delete
@@ -148,6 +154,7 @@ npm run limpar-controle
 ```
 
 ### Backup
+
 ```bash
 # Backup completo do banco
 ./scripts/backup-db.sh
@@ -157,6 +164,7 @@ pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > backup.sql
 ```
 
 ### Troubleshooting
+
 ```bash
 # Verificar estado geral
 npm run status
@@ -185,6 +193,7 @@ Para deploy em produção, consulte a seção "Deploy com Docker/Coolify" no REA
 ## 🤝 Contribuindo
 
 Ao adicionar novos arquivos, mantenha a organização:
+
 - Testes → `tests/`
 - Utilitários → `utils/`
 - Código-fonte → `src/`

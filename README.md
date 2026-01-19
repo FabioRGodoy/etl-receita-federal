@@ -73,7 +73,7 @@ MODE=manual  # IMPORTANTE: não executar automaticamente
 /data/logs → 5GB (logs do sistema)
 
 # 4. Configure no Coolify:
-#    - Restart Policy: "no" ou "on-failure" 
+#    - Restart Policy: "no" ou "on-failure"
 #    - NUNCA use "always" (pode causar loop infinito)
 
 # 5. Deploy e aguarde container subir
@@ -87,11 +87,13 @@ npm run full-load -- --yes
 O sistema precisa das seguintes tabelas (criadas automaticamente pelo setup-banco.sh):
 
 **Tabelas de Dados:**
+
 - `municipios` (5.570 registros)
 - `estabelecimentos` (~50M registros)
 - `socios` (~20M registros)
 
 **Tabelas de Controle:**
+
 - `etl_control_runs` (histórico de execuções)
 - `etl_control_files` (controle e checkpoint por arquivo)
 
@@ -125,6 +127,7 @@ TESTMODE=false                # true para modo de teste
 ```
 
 **⚠️ Segurança:**
+
 - NUNCA commite o arquivo `.env` no Git
 - Use senhas fortes em produção
 - Considere usar secrets do Coolify/Docker
@@ -133,39 +136,39 @@ TESTMODE=false                # true para modo de teste
 
 ### 📦 Operações Principais
 
-| Comando | Descrição | Tempo Estimado |
-|---------|-----------|----------------|
-| `npm run full-load -- --yes` | **Carga completa** (TRUNCATE + carga) | 7-10 horas |
-| `npm run delta -- --yes` | **Carga incremental** (apenas novos) | 1-3 horas |
-| `npm run discovery` | Lista arquivos disponíveis na Receita Federal | 10 segundos |
-| `npm run status` | Mostra estado atual do ETL | 2 segundos |
+| Comando                      | Descrição                                     | Tempo Estimado |
+| ---------------------------- | --------------------------------------------- | -------------- |
+| `npm run full-load -- --yes` | **Carga completa** (TRUNCATE + carga)         | 7-10 horas     |
+| `npm run delta -- --yes`     | **Carga incremental** (apenas novos)          | 1-3 horas      |
+| `npm run discovery`          | Lista arquivos disponíveis na Receita Federal | 10 segundos    |
+| `npm run status`             | Mostra estado atual do ETL                    | 2 segundos     |
 
 ### 🔧 Utilitários de Manutenção
 
-| Comando | Descrição | Uso |
-|---------|-----------|-----|
+| Comando                   | Descrição                              | Uso               |
+| ------------------------- | -------------------------------------- | ----------------- |
 | `npm run limpar-controle` | Remove checkpoints e histórico de runs | Recomeçar do zero |
-| `npm run limpar-temp` | Remove arquivos ZIP temporários | Liberar espaço |
-| `npm run migrate` | Executa migrations pendentes | Setup inicial |
+| `npm run limpar-temp`     | Remove arquivos ZIP temporários        | Liberar espaço    |
+| `npm run migrate`         | Executa migrations pendentes           | Setup inicial     |
 
 ### 🧪 Testes e Validação
 
-| Comando | Descrição | Tempo |
-|---------|-----------|-------|
-| `npm run test:conexao` | Testa conexão com PostgreSQL | 2 seg |
-| `npm run test:discovery` | Testa discovery de arquivos | 10 seg |
-| `npm run test:municipios` | Processa 1 arquivo de municípios | 30 seg |
+| Comando                         | Descrição                              | Tempo  |
+| ------------------------------- | -------------------------------------- | ------ |
+| `npm run test:conexao`          | Testa conexão com PostgreSQL           | 2 seg  |
+| `npm run test:discovery`        | Testa discovery de arquivos            | 10 seg |
+| `npm run test:municipios`       | Processa 1 arquivo de municípios       | 30 seg |
 | `npm run test:estabelecimentos` | Processa 1 arquivo de estabelecimentos | 20 min |
-| `npm run test:socios` | Processa 1 arquivo de sócios | 15 min |
+| `npm run test:socios`           | Processa 1 arquivo de sócios           | 15 min |
 
 ### 🛠️ Scripts SQL e Banco
 
-| Script | Descrição | Quando usar |
-|--------|-----------|-------------|
-| `bash sql/setup-banco.sh` | Setup completo do banco | Primeira vez |
-| `psql ... -f sql/schema.sql` | Cria apenas tabelas | Reconstruir schema |
-| `psql ... -f sql/drop.sql` | Remove todas as tabelas | Reset completo |
-| `node sql/migrations/run-migration.js` | Executa uma migration específica | Aplicar mudanças |
+| Script                                 | Descrição                        | Quando usar        |
+| -------------------------------------- | -------------------------------- | ------------------ |
+| `bash sql/setup-banco.sh`              | Setup completo do banco          | Primeira vez       |
+| `psql ... -f sql/schema.sql`           | Cria apenas tabelas              | Reconstruir schema |
+| `psql ... -f sql/drop.sql`             | Remove todas as tabelas          | Reset completo     |
+| `node sql/migrations/run-migration.js` | Executa uma migration específica | Aplicar mudanças   |
 
 ### 📊 Exemplos de Uso
 
@@ -209,22 +212,26 @@ node tests/check-constraints.js  # Verifica constraints
 ### ⚠️ IMPORTANTE: FULL LOAD vs DELTA
 
 #### FULL LOAD
+
 ```bash
 npm run full-load -- --yes
 ```
 
 **O que faz:**
+
 - ✅ Descobre arquivos mais recentes na Receita Federal
 - ⚠️ **TRUNCATE** em todas as tabelas (municipios, estabelecimentos, socios)
 - ✅ Processa **TODOS** os arquivos encontrados (~21 arquivos)
 - ✅ Carrega ~50 milhões de estabelecimentos + ~20M sócios + 5.570 municípios
 
 **Quando usar:**
+
 - Primeira execução do sistema
 - Quando precisa reconstruir base completa
 - Após alterações no schema do banco
 
 **Proteções:**
+
 - 🛡️ **Anti-loop:** Não executa se houver FULL LOAD concluído nas últimas 2 horas
 - 🛡️ Requer flag `--yes` explícita para evitar execução acidental
 - 🛡️ Em produção, considere usar `--force` apenas com extremo cuidado
@@ -232,17 +239,20 @@ npm run full-load -- --yes
 **Tempo estimado:** 7-10 horas (depende da conexão e hardware)
 
 #### DELTA LOAD
+
 ```bash
 npm run delta -- --yes
 ```
 
 **O que faz:**
+
 - ✅ Descobre apenas arquivos **NOVOS** (não processados)
 - ✅ **NÃO** faz TRUNCATE (mantém dados existentes)
 - ✅ Usa `ON CONFLICT DO UPDATE` para atualizar registros
 - ✅ Processa apenas diferenças desde última execução
 
 **Quando usar:**
+
 - Execução diária/mensal (automação)
 - Atualizar base com dados mais recentes
 - Manter dados sincronizados com Receita Federal
@@ -251,17 +261,18 @@ npm run delta -- --yes
 
 #### Comparação
 
-| Característica | FULL LOAD | DELTA LOAD |
-|----------------|-----------|------------|
-| Trunca tabelas | ✅ Sim | ❌ Não |
-| Processa tudo | ✅ Todos arquivos | 📁 Apenas novos |
-| Tempo | 7-10h | 1-3h |
-| Uso em prod | Raramente | Diariamente |
-| Proteção anti-loop | ✅ 2 horas | ❌ Não precisa |
+| Característica     | FULL LOAD         | DELTA LOAD      |
+| ------------------ | ----------------- | --------------- |
+| Trunca tabelas     | ✅ Sim            | ❌ Não          |
+| Processa tudo      | ✅ Todos arquivos | 📁 Apenas novos |
+| Tempo              | 7-10h             | 1-3h            |
+| Uso em prod        | Raramente         | Diariamente     |
+| Proteção anti-loop | ✅ 2 horas        | ❌ Não precisa  |
 
 ### 🔄 Checkpoint e Retomada
 
 O sistema salva checkpoints automaticamente a cada 30 segundos com as seguintes informações:
+
 - Arquivo sendo processado
 - Linha atual
 - Registros processados
@@ -274,7 +285,7 @@ O sistema salva checkpoints automaticamente a cada 30 segundos com as seguintes 
 npm run full-load -- --yes
 
 # O sistema detecta:
-# - Arquivos com status 'processing' 
+# - Arquivos com status 'processing'
 # - Checkpoint salvo no JSONB
 # - Continua de onde parou
 ```
@@ -299,8 +310,8 @@ npm run full-load -- --yes
 **Configuração recomendada:**
 
 1. **No Coolify** → Seu serviço → **Scheduled Tasks**
-   
 2. **Para DELTA diário às 3h da manhã:**
+
    ```
    Frequency: 0 3 * * *
    Command: npm run delta -- --yes
@@ -313,12 +324,14 @@ npm run full-load -- --yes
    ```
 
 **Exemplos de frequências:**
+
 - `0 3 * * *` - Diariamente às 3h
 - `0 2 1 * *` - Todo dia 1º às 2h
 - `0 4 * * 0` - Domingos às 4h
 - `0 */6 * * *` - A cada 6 horas
 
 **Monitoramento:**
+
 - Configure alertas no Coolify para falhas
 - Verifique logs regularmente
 - Use `npm run status` para validar execuções
@@ -491,7 +504,7 @@ CREATE TABLE estabelecimentos (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_estabelecimentos_cnpj_parts 
+CREATE UNIQUE INDEX idx_estabelecimentos_cnpj_parts
 ON estabelecimentos(cnpj_basico, cnpj_ordem, cnpj_dv);
 
 -- ============================================
@@ -509,7 +522,7 @@ CREATE TABLE socios (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_socios_unique 
+CREATE UNIQUE INDEX idx_socios_unique
 ON socios(cnpj_basico, identificador_socio, cpf_cnpj_socio);
 ```
 
@@ -568,13 +581,13 @@ CREATE INDEX idx_etl_files_run_id ON etl_control_files(run_id);
 
 ### Tempos de Execução (Produção)
 
-| Operação | Arquivos | Registros | Tempo | Observações |
-|----------|----------|-----------|-------|-------------|
-| **FULL LOAD** | 21 | ~96M | 7-10h | Inclui download + processamento |
-| **DELTA** | 3-5 | ~15M | 1-3h | Apenas arquivos novos |
-| Municipios | 1 | 5.570 | 30s | Arquivo pequeno |
-| Estabelecimentos (1 arquivo) | 1 | ~4-5M | 30-60min | Arquivo maior |
-| Socios (1 arquivo) | 1 | ~2-3M | 15-30min | 11 colunas |
+| Operação                     | Arquivos | Registros | Tempo    | Observações                     |
+| ---------------------------- | -------- | --------- | -------- | ------------------------------- |
+| **FULL LOAD**                | 21       | ~96M      | 7-10h    | Inclui download + processamento |
+| **DELTA**                    | 3-5      | ~15M      | 1-3h     | Apenas arquivos novos           |
+| Municipios                   | 1        | 5.570     | 30s      | Arquivo pequeno                 |
+| Estabelecimentos (1 arquivo) | 1        | ~4-5M     | 30-60min | Arquivo maior                   |
+| Socios (1 arquivo)           | 1        | ~2-3M     | 15-30min | 11 colunas                      |
 
 ### Configurações Otimizadas
 
@@ -634,7 +647,7 @@ tail -f logs/etl-*.log | grep ERROR
 watch -n 5 "npm run status"
 
 # Contar registros processados
-psql -c "SELECT 
+psql -c "SELECT
   (SELECT COUNT(*) FROM municipios) as municipios,
   (SELECT COUNT(*) FROM estabelecimentos) as estabelecimentos,
   (SELECT COUNT(*) FROM socios) as socios;"
@@ -643,6 +656,7 @@ psql -c "SELECT
 ### Alertas Recomendados
 
 Configure alertas no Coolify para:
+
 - ❌ Status 'error' em etl_control_files
 - ⏰ Runs com duração > 12 horas
 - 💾 Disco com < 5GB livre
@@ -694,8 +708,8 @@ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT NOW();"
 SELECT * FROM etl_control_runs WHERE status = 'running';
 
 -- Atualizar status
-UPDATE etl_control_runs 
-SET status = 'interrupted', completed_at = NOW() 
+UPDATE etl_control_runs
+SET status = 'interrupted', completed_at = NOW()
 WHERE id = <run_id>;
 ```
 
@@ -737,16 +751,16 @@ df -h logs/
 # ============================================
 # Verificar conexões PostgreSQL
 # ============================================
-psql -c "SELECT count(*) as connections 
-FROM pg_stat_activity 
+psql -c "SELECT count(*) as connections
+FROM pg_stat_activity
 WHERE datname = 'postgres';"
 
 # ============================================
 # Verificar tabelas e registros
 # ============================================
-psql -c "SELECT 
+psql -c "SELECT
   'municipios' as tabela, COUNT(*) FROM municipios
-UNION ALL SELECT 'estabelecimentos', COUNT(*) FROM estabelecimentos  
+UNION ALL SELECT 'estabelecimentos', COUNT(*) FROM estabelecimentos
 UNION ALL SELECT 'socios', COUNT(*) FROM socios;"
 ```
 
@@ -787,8 +801,8 @@ npm run full-load -- --yes
 SELECT * FROM etl_control_files WHERE status = 'error';
 
 -- 2. Resetar arquivo específico
-UPDATE etl_control_files 
-SET status = 'pending', 
+UPDATE etl_control_files
+SET status = 'pending',
     checkpoint = NULL,
     error_message = NULL
 WHERE file_name = 'Estabelecimentos5.zip';
@@ -796,20 +810,24 @@ WHERE file_name = 'Estabelecimentos5.zip';
 -- 3. Rodar novamente (processará apenas pendentes)
 npm run full-load -- --yes
 ```
-├── etl-2026-01-17.log       # Log dia anterior
-├── cron-delta.log           # Logs do cron DELTA
-└── backup.log               # Logs de backup
+
+├── etl-2026-01-17.log # Log dia anterior
+├── cron-delta.log # Logs do cron DELTA
+└── backup.log # Logs de backup
+
 ```
 
 ### Formato de Log
 
 ```
-[2026-01-18 01:32:15] INFO  | orchestrator    | Iniciando ETL - Tipo: FULL
-[2026-01-18 01:32:20] INFO  | discovery       | 21 arquivos encontrados
-[2026-01-18 01:32:25] INFO  | downloader      | ⬇️  Baixando: Municipios.zip
-[2026-01-18 01:33:00] INFO  | processor       | 📋 Retomando do checkpoint: linha 793,000
-[2026-01-18 01:45:00] INFO  | orchestrator    | ✅ Arquivo concluído: 5,572 registros
-```
+
+[2026-01-18 01:32:15] INFO | orchestrator | Iniciando ETL - Tipo: FULL
+[2026-01-18 01:32:20] INFO | discovery | 21 arquivos encontrados
+[2026-01-18 01:32:25] INFO | downloader | ⬇️ Baixando: Municipios.zip
+[2026-01-18 01:33:00] INFO | processor | 📋 Retomando do checkpoint: linha 793,000
+[2026-01-18 01:45:00] INFO | orchestrator | ✅ Arquivo concluído: 5,572 registros
+
+````
 
 ### Monitorar Logs em Tempo Real
 
@@ -825,7 +843,7 @@ grep "ERROR" logs/etl-$(date +%Y-%m-%d).log
 
 # Buscar por arquivo específico
 grep "Estabelecimentos0" logs/etl-$(date +%Y-%m-%d).log
-```
+````
 
 ## 🛠️ Troubleshooting
 
@@ -843,6 +861,7 @@ grep "Estabelecimentos0" logs/etl-$(date +%Y-%m-%d).log
 
 **Causa:** Arquivo ZIP corrompido/incompleto  
 **Solução:**
+
 ```bash
 node limpar-temp.js  # Remove ZIPs corrompidos
 npm run full-load -- --yes  # Re-download automático
@@ -852,6 +871,7 @@ npm run full-load -- --yes  # Re-download automático
 
 **Causa:** Restart automático do container executando FULL LOAD  
 **Solução:**
+
 1. Configure `MODE=manual` no .env
 2. Configure Restart Policy como `no` ou `on-failure` no Coolify
 3. Use proteção anti-loop já implementada (2 horas)
@@ -910,7 +930,7 @@ npm run status
 
 # Via SQL
 psql -d postgres -c "
-  SELECT 
+  SELECT
     r.id as run_id,
     r.run_type,
     r.status as run_status,
@@ -943,12 +963,15 @@ node test-conexao.js
 ### 💾 Checkpoint não está salvando
 
 **Verificar:**
+
 1. Coluna `checkpoint` existe na tabela `etl_control_files`?
+
 ```bash
 psql -d postgres -c "\d etl_control_files"
 ```
 
 2. Aplicar migration se necessário:
+
 ```bash
 psql -d postgres -f sql/migrate-add-checkpoint.sql
 ```
@@ -986,10 +1009,10 @@ LOG_DIR=/data/logs
 
 #### 3. Configurar Persistent Storage
 
-| Source Path | Destination | Size |
-|-------------|-------------|------|
+| Source Path  | Destination  | Size |
+| ------------ | ------------ | ---- |
 | `/data/temp` | `/data/temp` | 20GB |
-| `/data/logs` | `/data/logs` | 5GB |
+| `/data/logs` | `/data/logs` | 5GB  |
 
 #### 4. Configurar Restart Policy
 
@@ -1042,11 +1065,13 @@ pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > backup-$(date +%Y%m%d)
 ### Variáveis Sensíveis
 
 **NUNCA commite:**
+
 - `.env` (arquivo de ambiente local)
 - Senhas de banco de dados
 - URLs com credenciais
 
 **Use:**
+
 - `.env.example` como template (sem valores reais)
 - Variables de ambiente no Coolify/Docker
 - Secrets management em produção
@@ -1176,12 +1201,12 @@ gunzip -c backup-20260119.sql.gz | \
 
 ```json
 {
-  "axios": "^1.6.5",         // HTTP client
+  "axios": "^1.6.5", // HTTP client
   "cheerio": "^1.0.0-rc.12", // Parse HTML
-  "csv-parser": "^3.0.0",    // Parse CSV
-  "dotenv": "^16.4.1",       // Environment
-  "pg": "^8.11.3",           // PostgreSQL
-  "yauzl": "^3.1.2"          // Unzip streaming
+  "csv-parser": "^3.0.0", // Parse CSV
+  "dotenv": "^16.4.1", // Environment
+  "pg": "^8.11.3", // PostgreSQL
+  "yauzl": "^3.1.2" // Unzip streaming
 }
 ```
 
